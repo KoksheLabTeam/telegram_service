@@ -1,0 +1,27 @@
+from typing import Optional
+from datetime import datetime
+from app.core.schemas.base import BaseSchema
+
+class OfferStatus(str):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+class OfferRead(BaseSchema):
+    id: int
+    order_id: int
+    executor_id: int
+    price: float
+    estimated_time: int
+    status: OfferStatus
+    created_at: datetime
+
+class OfferCreate(BaseSchema):
+    order_id: int
+    price: float
+    estimated_time: int
+
+    model_config = {"str_strip_whitespace": True}
+
+class OfferUpdate(BaseSchema):
+    status: Optional[OfferStatus] = None
