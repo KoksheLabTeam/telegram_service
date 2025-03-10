@@ -10,6 +10,16 @@ from fastapi.exceptions import HTTPException
 
 router = APIRouter(prefix="/user", tags=["User"])
 
+@router.get("/by_telegram_id/{telegram_id}", response_model=UserRead)
+def get_user_by_telegram_id(
+    telegram_id: int,
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user = session.query(User).filter(User.telegram_id == telegram_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
 @router.get("/me", response_model=UserRead)
 def get_me(user: Annotated[User, Depends(get_current_user)]):
     return user

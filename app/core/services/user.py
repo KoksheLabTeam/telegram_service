@@ -15,12 +15,12 @@ def create_user(session: Session, data: UserCreate) -> User:
     get_city_by_id(session, data.city_id)
     user_data = data.model_dump(exclude={"category_ids"})
     user = User(**user_data)
-    #### тут отрезаем
-    categories = session.query(Category).filter(Category.id.in_(data.category_ids)).all()
-    if len(categories) != len(data.category_ids):
-        raise HTTPException(status_code=404, detail="One or more categories not found")
-    user.categories = categories
-    #### до сюда, чтобы пользователя добавить без категории
+    # Категории временно не проверяем и не добавляем
+    if data.category_ids:  # Если категории переданы, добавляем их
+        categories = session.query(Category).filter(Category.id.in_(data.category_ids)).all()
+        if len(categories) != len(data.category_ids):
+            raise HTTPException(status_code=404, detail="One or more categories not found")
+        user.categories = categories
     session.add(user)
     try:
         session.commit()
@@ -42,7 +42,6 @@ def get_user_by_id(session: Session, id: int) -> User:
 def update_user_by_id(session: Session, data: UserUpdate, id: int) -> User:
     user = get_user_by_id(session, id)
     update_data = data.model_dump(exclude_unset=True, exclude_none=True)
-    # Проверяем роли при обновлении
     if "is_customer" in update_data or "is_executor" in update_data:
         is_customer = update_data.get("is_customer", user.is_customer)
         is_executor = update_data.get("is_executor", user.is_executor)
@@ -50,7 +49,7 @@ def update_user_by_id(session: Session, data: UserUpdate, id: int) -> User:
             raise HTTPException(status_code=400, detail="User cannot be both customer and executor")
     if "city_id" in update_data:
         get_city_by_id(session, data.city_id)
-    if "category_ids" in update_data:
+    if "category_ids" in update_data and data.category_ids is not None:
         categories = session.query(Category).filter(Category.id.in_(data.category_ids)).all()
         if len(categories) != len(data.category_ids):
             raise HTTPException(status_code=404, detail="One or more categories not found")

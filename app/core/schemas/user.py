@@ -20,7 +20,7 @@ class UserCreate(BaseSchema):
     is_customer: bool
     is_executor: bool
     city_id: int
-    category_ids: List[int]
+    category_ids: Optional[List[int]] = None  # Делаем необязательным
 
     model_config = {"str_strip_whitespace": True}
 
