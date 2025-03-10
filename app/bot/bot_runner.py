@@ -6,6 +6,7 @@ from app.bot.handlers import start, create_order, profile, orders, admin, cities
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# Подключаем все роутеры
 dp.include_router(start.router)
 dp.include_router(create_order.router)
 dp.include_router(profile.router)

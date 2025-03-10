@@ -1,7 +1,7 @@
 from aiogram import Router, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton  # Добавляем импорты
 import aiohttp
-from app.bot.config import API_URL
+from app.bot.config import API_URL, ADMIN_TELEGRAM_ID
 from app.bot.handlers.start import get_main_keyboard
 from app.bot.handlers.utils import api_request, get_user_telegram_id
 

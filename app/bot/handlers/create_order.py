@@ -2,6 +2,8 @@ from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import aiohttp
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 from app.bot.config import API_URL
 from app.bot.handlers.start import get_main_keyboard
 from app.bot.handlers.utils import api_request, create_categories_keyboard, create_back_keyboard

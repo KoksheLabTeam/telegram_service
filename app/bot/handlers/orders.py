@@ -1,6 +1,7 @@
 from aiogram import Router, F, types
 from app.bot.handlers.start import get_main_keyboard
 from app.bot.handlers.utils import api_request
+from app.bot.config import API_URL
 
 router = Router()
 

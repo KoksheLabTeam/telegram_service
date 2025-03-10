@@ -1,5 +1,6 @@
 from aiogram import Router, F, types
-from app.bot.config import ADMIN_TELEGRAM_ID
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from app.bot.config import ADMIN_TELEGRAM_ID, API_URL
 from app.bot.handlers.start import get_main_keyboard
 from app.bot.handlers.utils import api_request
 

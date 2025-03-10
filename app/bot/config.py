@@ -1,3 +1,3 @@
 BOT_TOKEN = "7787197089:AAH8WYaTLA6DgoBR4vk8fXiycgBMKs0McJc"
-API_URL = "http://127.0.0.1:8010/api/"
+API_URL = "http://127.0.0.1:8014/api/"
 ADMIN_TELEGRAM_ID = 704342630  # Ваш Telegram ID
