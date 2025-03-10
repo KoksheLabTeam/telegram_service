@@ -2,7 +2,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 from app.core.models.base import Base
 from decimal import Decimal
-from sqlalchemy import Enum
+from sqlalchemy import Enum, ForeignKey, Numeric
 import enum
 
 class OfferStatus(str, enum.Enum):

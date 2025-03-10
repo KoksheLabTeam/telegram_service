@@ -4,8 +4,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from app.core.models.order import Order
 from app.core.schemas.order import OrderCreate, OrderUpdate
+from app.core.services.category import get_category_by_id  # Импортируем для проверки
 
 def create_order(session: Session, data: OrderCreate, customer_id: int) -> Order:
+    # Проверяем, существует ли категория
+    get_category_by_id(session, data.category_id)  # Вызовет 404, если категория не найдена
     order_data = data.model_dump()
     order = Order(**order_data, customer_id=customer_id)
     session.add(order)
