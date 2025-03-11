@@ -16,7 +16,6 @@ def create_order(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """Создать новый заказ (только для заказчиков)."""
     if not current_user.is_customer:
         raise HTTPException(status_code=403, detail="Only customers can create orders")
     return order_service.create_order(session, data, current_user.id)
@@ -26,7 +25,6 @@ def get_orders(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """Получить список заказов пользователя."""
     return order_service.get_orders_by_user(session, current_user.id)
 
 @router.get("/{id}", response_model=OrderRead)
@@ -35,7 +33,6 @@ def get_order(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """Получить заказ по ID."""
     order = order_service.get_order_by_id(session, id)
     if order.customer_id != current_user.id and order.executor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to view this order")
@@ -48,38 +45,28 @@ def update_order(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """Обновить заказ (только для владельца)."""
     order = order_service.get_order_by_id(session, id)
     if order.customer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Only the customer can update this order")
     return order_service.update_order_by_id(session, data, id)
 
-# Эндпоинт для удаления заказа админом
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_order(
     id: int,
     admin: Annotated[User, Depends(get_admin_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """Удалить заказ (только для админа)."""
-    order = order_service.get_order_by_id(session, id)
-    session.delete(order)
-    session.commit()
+    order_service.delete_order_by_id(session, id)
 
-# Эндпоинт для отмены заказа заказчиком в течение 5 минут
 @router.post("/{id}/cancel", response_model=OrderRead)
 def cancel_order(
     id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """Отменить заказ заказчиком в течение 5 минут после создания."""
     order = order_service.get_order_by_id(session, id)
     if order.customer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Only the customer can cancel this order")
     if datetime.utcnow() > order.created_at + timedelta(minutes=5):
         raise HTTPException(status_code=400, detail="Order can only be canceled within 5 minutes of creation")
-    order.status = "canceled"
-    session.commit()
-    session.refresh(order)
-    return order
+    return order_service.update_order_by_id(session, OrderUpdate(status="canceled"), id)

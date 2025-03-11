@@ -14,8 +14,8 @@ class User(Base):
     is_executor: Mapped[bool] = mapped_column(default=False)
     is_admin: Mapped[bool] = mapped_column(default=False)
     city_id: Mapped[int] = mapped_column(ForeignKey("cities.id", ondelete="CASCADE"), nullable=False)
-    rating: Mapped[Decimal] = mapped_column(Numeric(2, 1), default=0.0)
-    completed_orders: Mapped[int] = mapped_column(default=0)
+    rating: Mapped[Decimal] = mapped_column(Numeric(2, 1), default=0.0, nullable=False)
+    completed_orders: Mapped[int] = mapped_column(default=0, nullable=False)
 
     # Связи
     city: Mapped["City"] = relationship("City", back_populates="users")
@@ -34,4 +34,8 @@ class User(Base):
     )
     reviews_written: Mapped[list["Review"]] = relationship(
         "Review", foreign_keys="Review.author_id", back_populates="author"
+    )
+
+    __table_args__ = (
+        CheckConstraint("NOT (is_customer AND is_executor)", name="check_role_exclusivity"),
     )

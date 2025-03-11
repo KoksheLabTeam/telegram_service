@@ -17,10 +17,10 @@ class UserCreate(BaseSchema):
     telegram_id: int
     name: str
     username: Optional[str]
-    is_customer: bool
-    is_executor: bool
+    is_customer: bool = False
+    is_executor: bool = False
     city_id: int
-    category_ids: Optional[List[int]] = None  # Делаем необязательным
+    category_ids: Optional[List[int]] = None
 
     model_config = {"str_strip_whitespace": True}
 

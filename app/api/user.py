@@ -1,5 +1,5 @@
 from typing import Annotated, List
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from app.core.database.helper import get_session
 from app.core.models.user import User
@@ -20,6 +20,7 @@ def get_user_by_telegram_id(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
 @router.get("/me", response_model=UserRead)
 def get_me(user: Annotated[User, Depends(get_current_user)]):
     return user
@@ -29,10 +30,9 @@ def get_all_users(
     admin: Annotated[User, Depends(get_admin_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """Получить список всех пользователей (только для админа)."""
-    return session.query(User).all()
+    return user_service.get_users(session)
 
-@router.post("/", response_model=UserRead)
+@router.post("/", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def create_user(
     data: UserCreate,
     session: Annotated[Session, Depends(get_session)],
@@ -45,8 +45,6 @@ def update_me(
     user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    if data.is_customer is not None or data.is_executor is not None:
-        raise HTTPException(status_code=403, detail="Role change only through admin")
     return user_service.update_user_by_id(session, data, user.id)
 
 @router.patch("/{id}", response_model=UserRead)
@@ -57,3 +55,11 @@ def update_user_by_id(
     session: Annotated[Session, Depends(get_session)],
 ):
     return user_service.update_user_by_id(session, data, id)
+
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    id: int,
+    admin: Annotated[User, Depends(get_admin_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    user_service.delete_user_by_id(session, id)

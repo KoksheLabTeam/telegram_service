@@ -5,7 +5,7 @@ from fastapi import Depends, Header, status
 from app.core.models.user import User
 from app.core.database.helper import get_session
 
-ADMIN_TELEGRAM_ID = 704342630  # Ваш Telegram ID, например, 123456789
+ADMIN_TELEGRAM_ID = 704342630
 
 def get_current_user(
     x_telegram_id: Annotated[str, Header()],
@@ -13,13 +13,18 @@ def get_current_user(
 ) -> User:
     if not x_telegram_id:
         raise HTTPException(status_code=400, detail="x-telegram-id is missing")
-    user = session.query(User).filter(User.telegram_id == int(x_telegram_id)).first()
+    try:
+        telegram_id = int(x_telegram_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="x-telegram-id must be an integer")
+    user = session.query(User).filter(User.telegram_id == telegram_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
-def get_admin_user(current_user: Annotated[User, Depends(get_current_user)]) -> User:
-    #Временно отключаем проверку администратора
+def get_admin_user(
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> User:
     if current_user.telegram_id != ADMIN_TELEGRAM_ID:
         raise HTTPException(status_code=403, detail="Permission denied")
     return current_user

@@ -2,7 +2,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 from app.core.models.base import Base
 from decimal import Decimal
-from sqlalchemy import ForeignKey, Numeric
+from sqlalchemy import ForeignKey, Numeric, Enum
+import enum
+
+class OrderStatus(str, enum.Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELED = "canceled"
 
 class Order(Base):
     """Модель для заказов."""
@@ -16,11 +23,11 @@ class Order(Base):
     desired_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     due_date: Mapped[datetime] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
-    is_completed: Mapped[bool] = mapped_column(default=False)
+    status: Mapped[OrderStatus] = mapped_column(Enum(OrderStatus), default=OrderStatus.PENDING, nullable=False)
 
     # Связи
     customer: Mapped["User"] = relationship("User", foreign_keys="Order.customer_id", back_populates="orders_created")
     executor: Mapped["User"] = relationship("User", foreign_keys="Order.executor_id", back_populates="orders_executed")
     category: Mapped["Category"] = relationship("Category")
     offers: Mapped[list["Offer"]] = relationship("Offer", back_populates="order")
-    review: Mapped["Review"] = relationship("Review", back_populates="order")
+    review: Mapped["Review"] = relationship("Review", back_populates="order", uselist=False)

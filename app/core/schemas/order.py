@@ -1,6 +1,13 @@
 from typing import Optional
 from datetime import datetime
 from app.core.schemas.base import BaseSchema
+import enum
+
+class OrderStatus(str, enum.Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELED = "canceled"
 
 class OrderRead(BaseSchema):
     id: int
@@ -12,12 +19,12 @@ class OrderRead(BaseSchema):
     desired_price: float
     due_date: datetime
     created_at: datetime
-    is_completed: bool
+    status: OrderStatus
 
 class OrderCreate(BaseSchema):
     category_id: int
     title: str
-    description: Optional[str]
+    description: Optional[str] = None
     desired_price: float
     due_date: datetime
 
@@ -25,4 +32,4 @@ class OrderCreate(BaseSchema):
 
 class OrderUpdate(BaseSchema):
     executor_id: Optional[int] = None
-    is_completed: Optional[bool] = None
+    status: Optional[OrderStatus] = None

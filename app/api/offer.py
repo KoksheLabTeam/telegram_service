@@ -15,7 +15,6 @@ def create_offer(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """Создать новое предложение (только для исполнителей)."""
     if not current_user.is_executor:
         raise HTTPException(status_code=403, detail="Only executors can create offers")
     return offer_service.create_offer(session, data, current_user.id)
@@ -25,7 +24,6 @@ def get_offers(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """Получить список предложений пользователя."""
     return offer_service.get_offers_by_user(session, current_user.id)
 
 @router.get("/{id}", response_model=OfferRead)
@@ -34,7 +32,6 @@ def get_offer(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """Получить предложение по ID."""
     offer = offer_service.get_offer_by_id(session, id)
     if offer.executor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to view this offer")
@@ -47,8 +44,18 @@ def update_offer(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """Обновить предложение (только для владельца)."""
     offer = offer_service.get_offer_by_id(session, id)
     if offer.executor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Only the executor can update this offer")
     return offer_service.update_offer_by_id(session, data, id)
+
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_offer(
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    offer = offer_service.get_offer_by_id(session, id)
+    if offer.executor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the executor can delete this offer")
+    offer_service.delete_offer_by_id(session, id)
