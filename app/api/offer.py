@@ -34,19 +34,17 @@ async def accept_offer(
     order = order_service.get_order_by_id(session, id)
     if order.customer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только заказчик может принять предложение")
-    if order.status != "pending":
-        raise HTTPException(status_code=400, detail="Нельзя принять предложение для заказа не в статусе 'pending'")
+    if order.status != "В_ожидании":  # Проверка на русский статус
+        raise HTTPException(status_code=400, detail="Нельзя принять предложение для заказа не в статусе 'В_ожидании'")
 
     offer = offer_service.get_offer_by_id(session, offer_id)
     if offer.order_id != id:
         raise HTTPException(status_code=400, detail="Предложение не относится к этому заказу")
 
-    # Обновляем заказ и предложение
-    order_data = OrderUpdate(executor_id=offer.executor_id, status="in_progress")
+    order_data = OrderUpdate(executor_id=offer.executor_id, status="В_прогрессе")
     updated_order = order_service.update_order_by_id(session, order_data, id)
     offer_service.update_offer_by_id(session, OfferUpdate(status="accepted"), offer_id)
 
-    # Уведомляем исполнителя с ссылкой на чат
     executor = session.get(User, offer.executor_id)
     message = (
         f"Ваше предложение по заказу '{order.title}' (ID: {order.id}) принято!\n"
@@ -141,3 +139,36 @@ def delete_offer(
     if offer.executor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только исполнитель может удалить это предложение")
     offer_service.delete_offer_by_id(session, id)
+
+@router.post("/{id}/offers/{offer_id}/reject", response_model=OfferRead)
+async def reject_offer(
+    id: int,
+    offer_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    """Отклонить предложение (доступно только заказчику)."""
+    order = order_service.get_order_by_id(session, id)
+    if order.customer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Только заказчик может отклонить предложение")
+    if order.status != "В_ожидании":  # Проверка на русский статус
+        raise HTTPException(status_code=400, detail="Нельзя отклонить предложение для заказа не в статусе 'В_ожидании'")
+
+    offer = offer_service.get_offer_by_id(session, offer_id)
+    if offer.order_id != id:
+        raise HTTPException(status_code=400, detail="Предложение не относится к этому заказу")
+
+    updated_offer = offer_service.update_offer_by_id(session, OfferUpdate(status="rejected"), offer_id)
+
+    executor = session.get(User, offer.executor_id)
+    message = (
+        f"Ваше предложение по заказу '{order.title}' (ID: {order.id}) было отклонено заказчиком.\n"
+        f"Цена: {offer.price} тенге\n"
+        f"Время выполнения: {offer.estimated_time} часов"
+    )
+    try:
+        await send_telegram_message(executor.telegram_id, message)
+    except Exception as e:
+        logger.error(f"Ошибка отправки уведомления исполнителю: {e}")
+
+    return updated_offer

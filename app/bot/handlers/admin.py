@@ -7,18 +7,18 @@ from app.bot.handlers.utils import api_request, get_user_telegram_id
 
 router = Router()
 
-def get_main_keyboard(is_admin=False):
+def get_main_keyboard(roles: dict = None):
     from .start import get_main_keyboard
-    return get_main_keyboard(is_admin)
+    roles = roles or {}
+    return get_main_keyboard(roles)
 
-# Определяем состояния для FSM
 class AdminPanel(StatesGroup):
-    delete_user = State()  # Удаление пользователя
-    delete_order = State()  # Удаление заказа
-    add_city = State()     # Добавление города
-    edit_city = State()    # Изменение города
-    delete_city = State()  # Удаление города
-    change_all_cities = State()  # Массовое изменение городов
+    delete_user = State()
+    delete_order = State()
+    add_city = State()
+    edit_city = State()
+    delete_city = State()
+    change_all_cities = State()
 
 @router.message(F.text == "Админ-панель", lambda msg: msg.from_user.id == ADMIN_TELEGRAM_ID)
 async def admin_panel(message: Message):
@@ -35,14 +35,13 @@ async def admin_panel(message: Message):
     ])
     await message.answer("Админ-панель:", reply_markup=keyboard)
 
-# Список пользователей
 @router.callback_query(F.data == "list_users")
 async def list_users(callback: CallbackQuery):
     telegram_id = callback.from_user.id
     try:
         users = await api_request("GET", f"{API_URL}user/all", telegram_id)
         if not users:
-            await callback.message.answer("Пользователей нет.", reply_markup=get_main_keyboard(True))
+            await callback.message.answer("Пользователей нет.", reply_markup=get_main_keyboard({"is_admin": True}))
             await callback.answer()
             return
 
@@ -56,19 +55,18 @@ async def list_users(callback: CallbackQuery):
                 f"Роль: {role}\n"
                 f"Рейтинг: {user['rating']}\n\n"
             )
-        await callback.message.answer(response.strip(), reply_markup=get_main_keyboard(True))
+        await callback.message.answer(response.strip(), reply_markup=get_main_keyboard({"is_admin": True}))
     except Exception as e:
-        await callback.message.answer(f"Ошибка загрузки пользователей: {e}", reply_markup=get_main_keyboard(True))
+        await callback.message.answer(f"Ошибка загрузки пользователей: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
     await callback.answer()
 
-# Список заказов
 @router.callback_query(F.data == "list_orders")
 async def list_orders(callback: CallbackQuery):
     telegram_id = callback.from_user.id
     try:
         orders = await api_request("GET", f"{API_URL}order/", telegram_id)
         if not orders:
-            await callback.message.answer("Заказов нет.", reply_markup=get_main_keyboard(True))
+            await callback.message.answer("Заказов нет.", reply_markup=get_main_keyboard({"is_admin": True}))
             await callback.answer()
             return
 
@@ -89,12 +87,11 @@ async def list_orders(callback: CallbackQuery):
                 f"Желаемая цена: {order['desired_price']} тенге\n"
                 f"Срок: {due_date}\n\n"
             )
-        await callback.message.answer(response.strip(), reply_markup=get_main_keyboard(True))
+        await callback.message.answer(response.strip(), reply_markup=get_main_keyboard({"is_admin": True}))
     except Exception as e:
-        await callback.message.answer(f"Ошибка загрузки заказов: {e}", reply_markup=get_main_keyboard(True))
+        await callback.message.answer(f"Ошибка загрузки заказов: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
     await callback.answer()
 
-# Удаление пользователя
 @router.callback_query(F.data == "delete_user")
 async def start_delete_user(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("Введите ID пользователя для удаления:")
@@ -107,14 +104,13 @@ async def process_delete_user(message: Message, state: FSMContext):
     try:
         user_id = int(message.text)
         await api_request("DELETE", f"{API_URL}user/{user_id}", telegram_id)
-        await message.answer(f"Пользователь с ID {user_id} удалён.", reply_markup=get_main_keyboard(True))
+        await message.answer(f"Пользователь с ID {user_id} удалён.", reply_markup=get_main_keyboard({"is_admin": True}))
     except ValueError:
         await message.answer("Пожалуйста, введите корректный ID (число).")
     except Exception as e:
-        await message.answer(f"Ошибка удаления пользователя: {e}", reply_markup=get_main_keyboard(True))
+        await message.answer(f"Ошибка удаления пользователя: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
     await state.clear()
 
-# Удаление заказа
 @router.callback_query(F.data == "delete_order")
 async def start_delete_order(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("Введите ID заказа для удаления:")
@@ -127,14 +123,13 @@ async def process_delete_order(message: Message, state: FSMContext):
     try:
         order_id = int(message.text)
         await api_request("DELETE", f"{API_URL}order/{order_id}", telegram_id)
-        await message.answer(f"Заказ с ID {order_id} удалён.", reply_markup=get_main_keyboard(True))
+        await message.answer(f"Заказ с ID {order_id} удалён.", reply_markup=get_main_keyboard({"is_admin": True}))
     except ValueError:
         await message.answer("Пожалуйста, введите корректный ID (число).")
     except Exception as e:
-        await message.answer(f"Ошибка удаления заказа: {e}", reply_markup=get_main_keyboard(True))
+        await message.answer(f"Ошибка удаления заказа: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
     await state.clear()
 
-# Добавление города
 @router.callback_query(F.data == "add_city")
 async def start_add_city(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("Введите название нового города:")
@@ -147,19 +142,18 @@ async def process_add_city(message: Message, state: FSMContext):
     city_name = message.text.strip()
     try:
         await api_request("POST", f"{API_URL}city/", telegram_id, data={"name": city_name})
-        await message.answer(f"Город '{city_name}' успешно добавлен.", reply_markup=get_main_keyboard(True))
+        await message.answer(f"Город '{city_name}' успешно добавлен.", reply_markup=get_main_keyboard({"is_admin": True}))
     except Exception as e:
-        await message.answer(f"Ошибка добавления города: {e}", reply_markup=get_main_keyboard(True))
+        await message.answer(f"Ошибка добавления города: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
     await state.clear()
 
-# Изменение города
 @router.callback_query(F.data == "edit_city")
 async def start_edit_city(callback: CallbackQuery, state: FSMContext):
     telegram_id = callback.from_user.id
     try:
         cities = await api_request("GET", f"{API_URL}city/", telegram_id)
         if not cities:
-            await callback.message.answer("Городов нет.", reply_markup=get_main_keyboard(True))
+            await callback.message.answer("Городов нет.", reply_markup=get_main_keyboard({"is_admin": True}))
             await callback.answer()
             return
         response = "Список городов:\n\n"
@@ -168,7 +162,7 @@ async def start_edit_city(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(response + "\nВведите ID города для изменения:")
         await state.set_state(AdminPanel.edit_city)
     except Exception as e:
-        await callback.message.answer(f"Ошибка загрузки городов: {e}", reply_markup=get_main_keyboard(True))
+        await callback.message.answer(f"Ошибка загрузки городов: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
     await callback.answer()
 
 @router.message(AdminPanel.edit_city)
@@ -178,15 +172,15 @@ async def process_edit_city(message: Message, state: FSMContext):
         city_id = int(message.text)
         await state.update_data(city_id=city_id)
         await message.answer("Введите новое название города:")
-        await state.set_state(AdminPanel.edit_city)  # Остаёмся в том же состоянии для второго ввода
+        await state.set_state(AdminPanel.edit_city)
     except ValueError:
         await message.answer("Пожалуйста, введите корректный ID (число).")
         await state.clear()
     except Exception as e:
-        await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(True))
+        await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
         await state.clear()
 
-@router.message(AdminPanel.edit_city, lambda msg: "city_id" in (state.get_data() or {}))
+@router.message(AdminPanel.edit_city, lambda msg: "city_id" in (State.get_data() or {}))
 async def process_edit_city_name(message: Message, state: FSMContext):
     telegram_id = get_user_telegram_id(message)
     data = await state.get_data()
@@ -194,19 +188,18 @@ async def process_edit_city_name(message: Message, state: FSMContext):
     new_name = message.text.strip()
     try:
         await api_request("PATCH", f"{API_URL}city/{city_id}", telegram_id, data={"name": new_name})
-        await message.answer(f"Город с ID {city_id} обновлён на '{new_name}'.", reply_markup=get_main_keyboard(True))
+        await message.answer(f"Город с ID {city_id} обновлён на '{new_name}'.", reply_markup=get_main_keyboard({"is_admin": True}))
     except Exception as e:
-        await message.answer(f"Ошибка изменения города: {e}", reply_markup=get_main_keyboard(True))
+        await message.answer(f"Ошибка изменения города: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
     await state.clear()
 
-# Удаление города
 @router.callback_query(F.data == "delete_city")
 async def start_delete_city(callback: CallbackQuery, state: FSMContext):
     telegram_id = callback.from_user.id
     try:
         cities = await api_request("GET", f"{API_URL}city/", telegram_id)
         if not cities:
-            await callback.message.answer("Городов нет.", reply_markup=get_main_keyboard(True))
+            await callback.message.answer("Городов нет.", reply_markup=get_main_keyboard({"is_admin": True}))
             await callback.answer()
             return
         response = "Список городов:\n\n"
@@ -215,7 +208,7 @@ async def start_delete_city(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(response + "\nВведите ID города для удаления:")
         await state.set_state(AdminPanel.delete_city)
     except Exception as e:
-        await callback.message.answer(f"Ошибка загрузки городов: {e}", reply_markup=get_main_keyboard(True))
+        await callback.message.answer(f"Ошибка загрузки городов: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
     await callback.answer()
 
 @router.message(AdminPanel.delete_city)
@@ -224,57 +217,9 @@ async def process_delete_city(message: Message, state: FSMContext):
     try:
         city_id = int(message.text)
         await api_request("DELETE", f"{API_URL}city/{city_id}", telegram_id)
-        await message.answer(f"Город с ID {city_id} удалён.", reply_markup=get_main_keyboard(True))
+        await message.answer(f"Город с ID {city_id} удалён.", reply_markup=get_main_keyboard({"is_admin": True}))
     except ValueError:
         await message.answer("Пожалуйста, введите корректный ID (число).")
     except Exception as e:
-        await message.answer(f"Ошибка удаления города: {e}", reply_markup=get_main_keyboard(True))
+        await message.answer(f"Ошибка удаления города: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
     await state.clear()
-
-# Массовое изменение городов
-@router.callback_query(F.data == "change_all_cities")
-async def start_change_all_cities(callback: CallbackQuery, state: FSMContext):
-    telegram_id = callback.from_user.id
-    try:
-        cities = await api_request("GET", f"{API_URL}city/", telegram_id)
-        if not cities:
-            await callback.message.answer("Городов нет.", reply_markup=get_main_keyboard(True))
-            await callback.answer()
-            return
-        response = "Список городов:\n\n"
-        for city in cities:
-            response += f"ID: {city['id']} - {city['name']}\n"
-        await callback.message.answer(response + "\nВведите ID города, который будет установлен для всех пользователей:")
-        await state.set_state(AdminPanel.change_all_cities)
-    except Exception as e:
-        await callback.message.answer(f"Ошибка загрузки городов: {e}", reply_markup=get_main_keyboard(True))
-    await callback.answer()
-
-@router.message(AdminPanel.change_all_cities)
-async def process_change_all_cities(message: Message, state: FSMContext):
-    telegram_id = get_user_telegram_id(message)
-    try:
-        new_city_id = int(message.text)
-        # Проверяем, существует ли город
-        await api_request("GET", f"{API_URL}city/{new_city_id}", telegram_id)
-        # Получаем всех пользователей
-        users = await api_request("GET", f"{API_URL}user/all", telegram_id)
-        if not users:
-            await message.answer("Пользователей нет.", reply_markup=get_main_keyboard(True))
-            await state.clear()
-            return
-        # Обновляем city_id для каждого пользователя
-        for user in users:
-            await api_request("PATCH", f"{API_URL}user/{user['id']}", telegram_id, data={"city_id": new_city_id})
-        await message.answer(f"Город с ID {new_city_id} установлен для всех пользователей.", reply_markup=get_main_keyboard(True))
-    except ValueError:
-        await message.answer("Пожалуйста, введите корректный ID (число).")
-    except Exception as e:
-        await message.answer(f"Ошибка изменения городов: {e}", reply_markup=get_main_keyboard(True))
-    await state.clear()
-
-# Назад в главное меню
-@router.callback_query(F.data == "back")
-async def back_to_main(callback: CallbackQuery):
-    await callback.message.answer("Главное меню:", reply_markup=get_main_keyboard(True))
-    await callback.answer()

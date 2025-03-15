@@ -4,10 +4,10 @@ from app.core.schemas.base import BaseSchema
 import enum
 
 class OrderStatus(str, enum.Enum):
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    CANCELED = "canceled"
+    PENDING = "В_ожидании"  # Приводим к верхнему регистру
+    IN_PROGRESS = "В_прогрессе"
+    COMPLETED = "Выполнен"
+    CANCELED = "Отменен"
 
 class OrderRead(BaseSchema):
     id: int

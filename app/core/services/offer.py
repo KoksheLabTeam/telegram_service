@@ -9,8 +9,11 @@ from app.core.schemas.offer import OfferCreate, OfferUpdate
 def create_offer(session: Session, data: OfferCreate, executor_id: int) -> Offer:
     """Создать новое предложение."""
     order = session.get(Order, data.order_id)
-    if not order or order.customer_id == executor_id:
-        raise HTTPException(status_code=400, detail="Недопустимый заказ или самопредложение запрещено")
+    if not order:
+        raise HTTPException(status_code=400, detail="Заказ не найден")
+    executor = session.get(User, executor_id)
+    if order.customer_id == executor_id and not executor.is_admin:
+        raise HTTPException(status_code=400, detail="Самопредложение запрещено для не-администраторов")
     offer_data = data.model_dump()
     offer = Offer(**offer_data, executor_id=executor_id)
     session.add(offer)

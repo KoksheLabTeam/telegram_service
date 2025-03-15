@@ -6,10 +6,10 @@ from sqlalchemy import ForeignKey, Numeric, Enum
 import enum
 
 class OrderStatus(str, enum.Enum):
-    PENDING = "pending"  # Ожидает
-    IN_PROGRESS = "in_progress"  # В процессе
-    COMPLETED = "completed"  # Завершен
-    CANCELED = "canceled"  # Отменен
+    PENDING = "В_ожидании"  # Приводим к верхнему регистру
+    IN_PROGRESS = "В_прогрессе"
+    COMPLETED = "Выполнен"
+    CANCELED = "Отменен"
 
 class Order(Base):
     """Модель заказа."""
@@ -23,8 +23,8 @@ class Order(Base):
     desired_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)  # Желаемая цена
     due_date: Mapped[datetime] = mapped_column(nullable=False)  # Срок выполнения
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)  # Дата создания
-    status: Mapped[OrderStatus] = mapped_column(Enum(OrderStatus), default=OrderStatus.PENDING, nullable=False)  # Статус заказа
-
+    status: Mapped[OrderStatus] = mapped_column(Enum(OrderStatus, name="orderstatus"), default=OrderStatus.PENDING,
+                                                    nullable=True)
     # Связи с другими моделями
     customer: Mapped["User"] = relationship("User", foreign_keys="Order.customer_id", back_populates="orders_created")  # Заказчик
     executor: Mapped["User"] = relationship("User", foreign_keys="Order.executor_id", back_populates="orders_executed")  # Исполнитель

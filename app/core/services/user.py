@@ -9,8 +9,12 @@ from app.core.services.city import get_city_by_id
 
 def create_user(session: Session, data: UserCreate) -> User:
     """Создать нового пользователя."""
+    from app.api.depends.user import ADMIN_TELEGRAM_ID  # Импортируем здесь
     get_city_by_id(session, data.city_id)  # Проверка существования города
     user_data = data.model_dump(exclude={"category_ids"})  # Исключаем category_ids из данных
+    # Устанавливаем is_admin=True, если telegram_id совпадает с ADMIN_TELEGRAM_ID
+    if user_data["telegram_id"] == ADMIN_TELEGRAM_ID:
+        user_data["is_admin"] = True
     user = User(**user_data)
     if data.category_ids:  # Если указаны категории
         categories = session.query(Category).filter(Category.id.in_(data.category_ids)).all()
@@ -42,6 +46,7 @@ def get_users(session: Session) -> list[User]:
 
 def update_user_by_id(session: Session, data: UserUpdate, id: int) -> User:
     """Обновить данные пользователя по ID."""
+    from app.api.depends.user import ADMIN_TELEGRAM_ID  # Импортируем здесь
     user = get_user_by_id(session, id)
     update_data = data.model_dump(exclude_unset=True, exclude_none=True)
     if "city_id" in update_data:
@@ -54,6 +59,9 @@ def update_user_by_id(session: Session, data: UserUpdate, id: int) -> User:
         del update_data["category_ids"]
     for key, value in update_data.items():
         setattr(user, key, value)
+    # Синхронизируем is_admin с ADMIN_TELEGRAM_ID
+    if user.telegram_id == ADMIN_TELEGRAM_ID:
+        user.is_admin = True
     try:
         session.commit()
         session.refresh(user)

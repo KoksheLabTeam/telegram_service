@@ -33,8 +33,8 @@ def get_orders_by_user(session: Session, user_id: int) -> list[Order]:
     return session.scalars(stmt).all()
 
 def get_available_orders(session: Session) -> list[Order]:
-    """Получить список всех заказов со статусом 'pending'."""
-    stmt = select(Order).where(Order.status == "pending", Order.executor_id.is_(None))
+    """Получить список всех заказов со статусом 'В_ожидании'."""
+    stmt = select(Order).where(Order.status == "В_ожидании", Order.executor_id.is_(None))
     return session.scalars(stmt).all()
 
 def update_order_by_id(session: Session, data: OrderUpdate, id: int) -> Order:

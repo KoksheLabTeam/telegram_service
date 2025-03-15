@@ -3,10 +3,14 @@ from docx.oxml.ns import qn
 from docx.enum.style import WD_STYLE_TYPE
 from docx.shared import Pt  # Исправленный импорт Pt
 import os
+from datetime import datetime  # Импортируем datetime для работы с датой
 
 # Путь к папке с вашими Python-файлами
 folder_path = "C:/Users/User/PycharmProjects/telegram_service/app"  # Указанная вами папка
-output_file = "all_python_files.docx"  # Имя выходного файла
+
+# Получаем текущую дату в формате дд.мм
+current_date = datetime.now().strftime("%d.%m")
+output_file = f"all_python_files_{current_date}.docx"  # Имя выходного файла с датой
 
 # Создаём новый документ Word
 doc = Document()

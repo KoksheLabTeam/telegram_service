@@ -1,6 +1,7 @@
 from typing import Annotated, List
 from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
+from app.api.offer import send_telegram_message
 from app.core.database.helper import get_session
 from app.core.models.user import User
 from app.core.schemas.offer import OfferRead, OfferUpdate
@@ -110,32 +111,31 @@ def update_order(
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_order(
-        id: int,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
-    """Удалить заказ (доступно заказчику только в статусе 'pending' или администратору)."""
+    """Удалить заказ (доступно заказчику только в статусе 'В_ожидании' или администратору)."""
     logger.info(f"Удаление заказа ID {id} пользователем {current_user.id}")
     order = order_service.get_order_by_id(session, id)
     if current_user.is_admin:
         order_service.delete_order_by_id(session, id)
         logger.info(f"Заказ ID {id} удалён администратором {current_user.id}")
     elif order.customer_id == current_user.id:
-        if order.status != "pending":
-            logger.warning(f"Попытка удаления заказа ID {id} не в статусе 'pending': {current_user.id}")
-            raise HTTPException(status_code=403, detail="Заказ можно удалить только в статусе 'pending'")
+        if order.status != "В_ожидании":  # Проверяем на русский статус
+            logger.warning(f"Попытка удаления заказа ID {id} не в статусе 'В_ожидании': {current_user.id}")
+            raise HTTPException(status_code=403, detail="Заказ можно удалить только в статусе 'В_ожидании'")
         order_service.delete_order_by_id(session, id)
         logger.info(f"Заказ ID {id} удалён заказчиком {current_user.id}")
     else:
         logger.warning(f"Попытка удаления заказа ID {id} без прав: {current_user.id}")
         raise HTTPException(status_code=403, detail="Нет прав для удаления этого заказа")
 
-
 @router.post("/{id}/cancel", response_model=OrderRead)
 def cancel_order(
-        id: int,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Отменить заказ (доступно заказчику в течение 5 минут после создания)."""
     logger.info(f"Отмена заказа ID {id} пользователем {current_user.id}")
@@ -146,7 +146,7 @@ def cancel_order(
     if datetime.utcnow() > order.created_at + timedelta(minutes=5):
         logger.warning(f"Попытка отмены заказа ID {id} после 5 минут: {current_user.id}")
         raise HTTPException(status_code=400, detail="Заказ можно отменить только в течение 5 минут после создания")
-    canceled_order = order_service.update_order_by_id(session, OrderUpdate(status="canceled"), id)
+    canceled_order = order_service.update_order_by_id(session, OrderUpdate(status="Отменен"), id)
     logger.info(f"Заказ ID {id} отменён")
     return canceled_order
 
