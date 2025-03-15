@@ -11,9 +11,18 @@ services:
     ports:
       - "6432:5432"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres -d telegram_services" ]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d telegram_services"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
     restart: unless-stopped
+  bot:
+    build: .
+    environment:
+      - DB_URL=postgresql://postgres:postgres@postgres:5432/telegram_services
+      - BOT_TOKEN=7706031286:AAHKHOZKmrGInQ7aUOGJfOBRx28ao8ctOkk
+      - ADMIN_TELEGRAM_ID=704342630
+    depends_on:
+      postgres:
+        condition: service_healthy

@@ -1,43 +1,37 @@
-from fastapi import FastAPI
-from app.api.routers import routers  # Предполагается, что это ваш роутер
-from app.core.models import Base
-from app.core.database.helper import engine, SessionLocal
-from app.core.models.city import City
-from app.core.models.category import Category
+import asyncio
 from sqlalchemy.orm import Session
-import logging
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
+from sqlalchemy.exc import OperationalError
+from app.bot.bot_runner import main
+from app.core.database.helper import SessionLocal
+from app.core.models.city import City
+from app.core.services.city import create_city
+from app.core.schemas.city import CityCreate
 
-app = FastAPI()
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def init_db():
-    Base.metadata.create_all(bind=engine)
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_fixed(5),
+    retry=retry_if_exception_type(OperationalError)
+)
+def init_db_with_retry():
     with SessionLocal() as session:
-        if not session.query(City).first():
-            default_city = City(name="Кокшетау")
-            session.add(default_city)
-            session.commit()
-            logger.info("Добавлен город по умолчанию: Кокшетау")
-        if not session.query(Category).first():
-            default_category = Category(name="Общие услуги")
-            session.add(default_category)
-            session.commit()
-            logger.info("Добавлена категория по умолчанию: Общие услуги")
+        try:
+            if not session.query(City).first():
+                city_data = CityCreate(name="Кокшетау")
+                create_city(session, city_data)
+                session.commit()
+                print("Город 'Кокшетау' добавлен в базу данных.")
+            else:
+                print("База данных уже содержит города, инициализация не требуется.")
+        except Exception as e:
+            print(f"Ошибка при инициализации базы данных: {e}")
+            session.rollback()
+            raise
 
-@app.on_event("startup")
-async def startup():
-    init_db()
-    logger.info("API запущен, роутеры подключены")
-
-# Проверяем подключение роутера
-logger.info(f"Подключение роутера: {routers}")
-app.include_router(routers)
-
-# Для отладки: выводим все маршруты
-@app.get("/debug/routes")
-async def debug_routes():
-    routes = [{"path": route.path, "methods": list(route.methods)} for route in app.routes]
-    logger.info(f"Зарегистрированные маршруты: {routes}")
-    return routes
+if __name__ == "__main__":
+    try:
+        init_db_with_retry()
+    except Exception as e:
+        print(f"Не удалось инициализировать базу данных после нескольких попыток: {e}")
+        exit(1)
+    asyncio.run(main())  # Запуск polling бота
