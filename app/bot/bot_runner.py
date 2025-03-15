@@ -7,6 +7,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не задан")
 
