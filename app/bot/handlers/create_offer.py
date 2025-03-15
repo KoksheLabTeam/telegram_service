@@ -6,6 +6,8 @@ from aiogram.fsm.context import FSMContext
 from app.bot.config import API_URL
 from app.bot.handlers.utils import api_request, get_user_telegram_id
 
+from datetime import datetime
+
 router = Router()
 
 
@@ -100,7 +102,8 @@ async def process_estimated_time(message: Message, state: FSMContext):
         offer_data = {
             "order_id": data["order_id"],
             "price": data["price"],
-            "estimated_time": estimated_time
+            "estimated_time": estimated_time,
+            "start_date": str(datetime.now())
         }
         await api_request("POST", f"{API_URL}offer/", telegram_id, data=offer_data)
         await message.answer("Предложение успешно создано!", reply_markup=get_main_keyboard(is_executor=True))

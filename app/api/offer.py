@@ -2,6 +2,7 @@ from typing import Annotated, List
 from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database.helper import get_session
+from app.core.models import Order
 from app.core.models.user import User
 from app.core.schemas.order import OrderUpdate, OrderRead
 from app.core.services import offer as offer_service
