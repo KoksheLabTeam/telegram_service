@@ -1,57 +1,48 @@
-from aiogram import Router, F, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton  # Добавляем импорты
-import aiohttp
-from app.bot.config import API_URL, ADMIN_TELEGRAM_ID
-from app.bot.handlers.start import get_main_keyboard
+from aiogram import Router, F
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from app.bot.config import API_URL
 from app.bot.handlers.utils import api_request, get_user_telegram_id
 
 router = Router()
 
+def get_main_keyboard():
+    from .start import get_main_keyboard
+    return get_main_keyboard()
 
 @router.message(F.text == "Сменить роль")
-async def switch_role_handler(message: types.Message):
-    telegram_id = await get_user_telegram_id(message)
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton(text="Заказчик", callback_data="role_customer"),
-        InlineKeyboardButton(text="Исполнитель", callback_data="role_executor"),
-        InlineKeyboardButton(text="Назад", callback_data="back")
-    )
-    await message.answer("Выберите новую роль:", reply_markup=keyboard)
-
+async def switch_role(message: Message):
+    telegram_id = get_user_telegram_id(message)
+    try:
+        user = await api_request("GET", f"{API_URL}user/me", telegram_id)
+        current_role = "Заказчик" if user["is_customer"] else "Исполнитель" if user["is_executor"] else "Не определена"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Заказчик", callback_data="role_customer")],
+            [InlineKeyboardButton(text="Исполнитель", callback_data="role_executor")],
+            [InlineKeyboardButton(text="Назад", callback_data="back")]
+        ])
+        await message.answer(f"Текущая роль: {current_role}\nВыберите новую роль:", reply_markup=keyboard)
+    except Exception as e:
+        await message.answer(f"Ошибка загрузки текущей роли: {e}", reply_markup=get_main_keyboard())
 
 @router.callback_query(F.data.startswith("role_"))
-async def change_role(callback: types.CallbackQuery):
-    role = callback.data.split("_")[1]
+async def change_role(callback: CallbackQuery):
     telegram_id = callback.from_user.id
-    is_customer = role == "customer"
-    is_executor = role == "executor"
-
-    # Проверяем, чтобы пользователь не был одновременно заказчиком и исполнителем
-    if is_customer and is_executor:
-        await callback.message.answer("Вы не можете быть одновременно заказчиком и исполнителем!",
-                                      reply_markup=get_main_keyboard())
-        await callback.answer()
-        return
-
+    role = callback.data.split("_")[1]
+    role_name = "Заказчик" if role == "customer" else "Исполнитель"
     try:
-        # Отправляем запрос на обновление роли
-        await api_request(
-            method="PATCH",
-            url=f"{API_URL}user/me",
-            telegram_id=telegram_id,
-            json={"is_customer": is_customer, "is_executor": is_executor}
-        )
-        role_name = "заказчик" if is_customer else "исполнитель"
-        await callback.message.answer(f"Ваша роль изменена на: {role_name}", reply_markup=get_main_keyboard())
+        # Обновляем роль через PATCH
+        update_data = {
+            "is_customer": role == "customer",
+            "is_executor": role == "executor"
+        }
+        await api_request("PATCH", f"{API_URL}user/me", telegram_id, data=update_data)
+        await callback.message.answer(f"Роль успешно изменена на: {role_name}", reply_markup=get_main_keyboard())
     except Exception as e:
-        await callback.message.answer(f"Ошибка при смене роли: {e}", reply_markup=get_main_keyboard())
+        await callback.message.answer(f"Ошибка смены роли: {e}", reply_markup=get_main_keyboard())
     await callback.answer()
 
-
 @router.callback_query(F.data == "back")
-async def back_to_main(callback: types.CallbackQuery):
-    telegram_id = callback.from_user.id
-    is_admin = telegram_id == ADMIN_TELEGRAM_ID
-    await callback.message.answer("Возвращаемся в главное меню.", reply_markup=get_main_keyboard(is_admin))
+async def back_to_main(callback: CallbackQuery):
+    is_admin = callback.from_user.id == ADMIN_TELEGRAM_ID
+    await callback.message.answer("Главное меню:", reply_markup=get_main_keyboard(is_admin))
     await callback.answer()

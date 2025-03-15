@@ -7,9 +7,10 @@ from app.core.models.order import Order
 from app.core.schemas.offer import OfferCreate, OfferUpdate
 
 def create_offer(session: Session, data: OfferCreate, executor_id: int) -> Offer:
+    """Создать новое предложение."""
     order = session.get(Order, data.order_id)
     if not order or order.customer_id == executor_id:
-        raise HTTPException(status_code=400, detail="Invalid order or self-offer not allowed")
+        raise HTTPException(status_code=400, detail="Недопустимый заказ или самопредложение запрещено")
     offer_data = data.model_dump()
     offer = Offer(**offer_data, executor_id=executor_id)
     session.add(offer)
@@ -18,20 +19,23 @@ def create_offer(session: Session, data: OfferCreate, executor_id: int) -> Offer
         session.refresh(offer)
     except SQLAlchemyError as e:
         session.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to create offer: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при создании предложения: {e}")
     return offer
 
 def get_offer_by_id(session: Session, id: int) -> Offer:
+    """Получить предложение по ID."""
     offer = session.get(Offer, id)
     if not offer:
-        raise HTTPException(status_code=404, detail="Offer not found")
+        raise HTTPException(status_code=404, detail="Предложение не найдено")
     return offer
 
 def get_offers_by_user(session: Session, user_id: int) -> list[Offer]:
+    """Получить список предложений пользователя."""
     stmt = select(Offer).where(Offer.executor_id == user_id)
     return session.scalars(stmt).all()
 
 def update_offer_by_id(session: Session, data: OfferUpdate, id: int) -> Offer:
+    """Обновить данные предложения по ID."""
     offer = get_offer_by_id(session, id)
     update_data = data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -41,14 +45,15 @@ def update_offer_by_id(session: Session, data: OfferUpdate, id: int) -> Offer:
         session.refresh(offer)
     except SQLAlchemyError as e:
         session.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to update offer: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении предложения: {e}")
     return offer
 
 def delete_offer_by_id(session: Session, id: int):
+    """Удалить предложение по ID."""
     offer = get_offer_by_id(session, id)
     session.delete(offer)
     try:
         session.commit()
     except SQLAlchemyError as e:
         session.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to delete offer: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при удалении предложения: {e}")

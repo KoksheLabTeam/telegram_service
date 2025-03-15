@@ -8,13 +8,14 @@ from app.core.schemas.user import UserCreate, UserUpdate
 from app.core.services.city import get_city_by_id
 
 def create_user(session: Session, data: UserCreate) -> User:
-    get_city_by_id(session, data.city_id)
-    user_data = data.model_dump(exclude={"category_ids"})
+    """Создать нового пользователя."""
+    get_city_by_id(session, data.city_id)  # Проверка существования города
+    user_data = data.model_dump(exclude={"category_ids"})  # Исключаем category_ids из данных
     user = User(**user_data)
-    if data.category_ids:
+    if data.category_ids:  # Если указаны категории
         categories = session.query(Category).filter(Category.id.in_(data.category_ids)).all()
         if len(categories) != len(data.category_ids):
-            raise HTTPException(status_code=404, detail="One or more categories not found")
+            raise HTTPException(status_code=404, detail="Одна или несколько категорий не найдены")
         user.categories = categories
     session.add(user)
     try:
@@ -22,30 +23,33 @@ def create_user(session: Session, data: UserCreate) -> User:
         session.refresh(user)
     except IntegrityError:
         session.rollback()
-        raise HTTPException(status_code=400, detail="User with this telegram_id or username already exists")
+        raise HTTPException(status_code=400, detail="Пользователь с таким telegram_id или username уже существует")
     except SQLAlchemyError as e:
         session.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to create user: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при создании пользователя: {e}")
     return user
 
 def get_user_by_id(session: Session, id: int) -> User:
+    """Получить пользователя по ID."""
     user = session.get(User, id)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
     return user
 
 def get_users(session: Session) -> list[User]:
+    """Получить список всех пользователей."""
     return session.scalars(select(User)).all()
 
 def update_user_by_id(session: Session, data: UserUpdate, id: int) -> User:
+    """Обновить данные пользователя по ID."""
     user = get_user_by_id(session, id)
     update_data = data.model_dump(exclude_unset=True, exclude_none=True)
     if "city_id" in update_data:
-        get_city_by_id(session, data.city_id)
+        get_city_by_id(session, data.city_id)  # Проверка существования города
     if "category_ids" in update_data and data.category_ids is not None:
         categories = session.query(Category).filter(Category.id.in_(data.category_ids)).all()
         if len(categories) != len(data.category_ids):
-            raise HTTPException(status_code=404, detail="One or more categories not found")
+            raise HTTPException(status_code=404, detail="Одна или несколько категорий не найдены")
         user.categories = categories
         del update_data["category_ids"]
     for key, value in update_data.items():
@@ -55,14 +59,15 @@ def update_user_by_id(session: Session, data: UserUpdate, id: int) -> User:
         session.refresh(user)
     except SQLAlchemyError as e:
         session.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to update user: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при обновлении пользователя: {e}")
     return user
 
 def delete_user_by_id(session: Session, id: int):
+    """Удалить пользователя по ID."""
     user = get_user_by_id(session, id)
     session.delete(user)
     try:
         session.commit()
     except SQLAlchemyError as e:
         session.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to delete user: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при удалении пользователя: {e}")

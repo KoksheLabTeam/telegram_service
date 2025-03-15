@@ -1,118 +1,108 @@
-from aiogram import Router, F, types
-from aiogram.fsm.context import FSMContext
+from aiogram import Router, F
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.state import State, StatesGroup
-import aiohttp
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
+from aiogram.fsm.context import FSMContext
 from app.bot.config import API_URL
-from app.bot.handlers.start import get_main_keyboard
-from app.bot.handlers.utils import api_request, create_categories_keyboard, create_back_keyboard
+from app.bot.handlers.utils import api_request, get_user_telegram_id
+from datetime import datetime, timedelta
 
 router = Router()
 
-class CreateOrderStates(StatesGroup):
-    SELECT_CATEGORY = State()
-    ENTER_TITLE = State()
-    ENTER_DESCRIPTION = State()
-    ENTER_PRICE = State()
-    ENTER_DUE_DATE = State()
-    CONFIRM = State()
+def get_main_keyboard():
+    from .start import get_main_keyboard
+    return get_main_keyboard()
+
+# Определяем состояния для FSM
+class CreateOrder(StatesGroup):
+    category = State()  # Выбор категории
+    title = State()     # Название заказа
+    description = State()  # Описание
+    price = State()     # Желаемая цена
+    due_date = State()  # Срок выполнения
 
 @router.message(F.text == "Создать заказ")
-async def start_create_order(message: types.Message, state: FSMContext):
-    telegram_id = message.from_user.id
+async def start_create_order(message: Message, state: FSMContext):
+    telegram_id = get_user_telegram_id(message)
     try:
         categories = await api_request("GET", f"{API_URL}category/", telegram_id)
-        await message.answer(
-            "Выберите категорию:",
-            reply_markup=create_categories_keyboard(categories)
-        )
-        await state.set_state(CreateOrderStates.SELECT_CATEGORY)
+        if not categories:
+            await message.answer("В системе нет категорий. Обратитесь к администратору.", reply_markup=get_main_keyboard())
+            return
+        # Пока используем только первую категорию для простоты
+        await state.update_data(category_id=categories[0]["id"])
+        await message.answer("Введите название заказа:", reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="Отмена")]],
+            resize_keyboard=True
+        ))
+        await state.set_state(CreateOrder.title)
     except Exception as e:
-        await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard())
+        await message.answer(f"Ошибка при загрузке категорий: {e}", reply_markup=get_main_keyboard())
 
-@router.callback_query(F.data.startswith("category_"))
-async def select_category(callback: types.CallbackQuery, state: FSMContext):
-    category_id = int(callback.data.split("_")[1])
-    await state.update_data(category_id=category_id)
-    await callback.message.answer("Введите заголовок заказа:", reply_markup=create_back_keyboard())
-    await state.set_state(CreateOrderStates.ENTER_TITLE)
-    await callback.answer()
-
-@router.message(CreateOrderStates.ENTER_TITLE)
-async def enter_title(message: types.Message, state: FSMContext):
-    if message.text == "Назад":
-        await message.answer("Возвращаемся в главное меню.", reply_markup=get_main_keyboard())
-        await state.clear()
-        return
+@router.message(CreateOrder.title, F.text != "Отмена")
+async def process_title(message: Message, state: FSMContext):
     await state.update_data(title=message.text)
-    await message.answer("Введите описание (или нажмите 'Пропустить'):", reply_markup=create_back_keyboard())
-    await state.set_state(CreateOrderStates.ENTER_DESCRIPTION)
+    await message.answer("Введите описание заказа (или напишите 'нет', чтобы пропустить):")
+    await state.set_state(CreateOrder.description)
 
-@router.message(CreateOrderStates.ENTER_DESCRIPTION)
-async def enter_description(message: types.Message, state: FSMContext):
-    if message.text == "Назад":
-        await message.answer("Возвращаемся в главное меню.", reply_markup=get_main_keyboard())
-        await state.clear()
-        return
-    description = message.text if message.text != "Пропустить" else None
+@router.message(CreateOrder.title, F.text == "Отмена")
+async def cancel_order_creation(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Создание заказа отменено.", reply_markup=get_main_keyboard())
+
+@router.message(CreateOrder.description, F.text != "Отмена")
+async def process_description(message: Message, state: FSMContext):
+    description = message.text if message.text.lower() != "нет" else None
     await state.update_data(description=description)
-    await message.answer("Введите желаемую цену:", reply_markup=create_back_keyboard())
-    await state.set_state(CreateOrderStates.ENTER_PRICE)
+    await message.answer("Введите желаемую цену (в тенге, например, 5000):")
+    await state.set_state(CreateOrder.price)
 
-@router.message(CreateOrderStates.ENTER_PRICE)
-async def enter_price(message: types.Message, state: FSMContext):
-    if message.text == "Назад":
-        await message.answer("Возвращаемся в главное меню.", reply_markup=get_main_keyboard())
-        await state.clear()
-        return
+@router.message(CreateOrder.description, F.text == "Отмена")
+async def cancel_order_creation(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Создание заказа отменено.", reply_markup=get_main_keyboard())
+
+@router.message(CreateOrder.price, F.text != "Отмена")
+async def process_price(message: Message, state: FSMContext):
     try:
         price = float(message.text)
+        if price <= 0:
+            raise ValueError("Цена должна быть положительной")
         await state.update_data(desired_price=price)
-        await message.answer("Введите дату выполнения (гггг-мм-ддTчч:мм:сс):", reply_markup=create_back_keyboard())
-        await state.set_state(CreateOrderStates.ENTER_DUE_DATE)
+        await message.answer("Введите срок выполнения (в формате ДД.ММ.ГГГГ, например, 20.03.2025):")
+        await state.set_state(CreateOrder.due_date)
     except ValueError:
-        await message.answer("Цена должна быть числом. Попробуйте снова:", reply_markup=create_back_keyboard())
+        await message.answer("Пожалуйста, введите корректную цену (число).")
 
-@router.message(CreateOrderStates.ENTER_DUE_DATE)
-async def enter_due_date(message: types.Message, state: FSMContext):
-    if message.text == "Назад":
-        await message.answer("Возвращаемся в главное меню.", reply_markup=get_main_keyboard())
-        await state.clear()
-        return
-    due_date = message.text
-    await state.update_data(due_date=due_date)
-    data = await state.get_data()
-    await message.answer(
-        f"Подтвердите заказ:\nКатегория: {data['category_id']}\nЗаголовок: {data['title']}\nОписание: {data.get('description', 'Нет')}\nЦена: {data['desired_price']}\nДата: {data['due_date']}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Подтвердить", callback_data="confirm_order")],
-            [InlineKeyboardButton(text="Отмена", callback_data="cancel_order")]
-        ])
-    )
-    await state.set_state(CreateOrderStates.CONFIRM)
+@router.message(CreateOrder.price, F.text == "Отмена")
+async def cancel_order_creation(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Создание заказа отменено.", reply_markup=get_main_keyboard())
 
-@router.callback_query(F.data == "confirm_order")
-async def confirm_order(callback: types.CallbackQuery, state: FSMContext):
-    telegram_id = callback.from_user.id
-    data = await state.get_data()
-    order_data = {
-        "category_id": data["category_id"],
-        "title": data["title"],
-        "description": data.get("description"),
-        "desired_price": data["desired_price"],
-        "due_date": data["due_date"]
-    }
+@router.message(CreateOrder.due_date, F.text != "Отмена")
+async def process_due_date(message: Message, state: FSMContext):
     try:
-        await api_request("POST", f"{API_URL}order/", telegram_id, json=order_data)
-        await callback.message.answer("Заказ успешно создан!", reply_markup=get_main_keyboard())
+        due_date = datetime.strptime(message.text, "%d.%m.%Y")
+        if due_date < datetime.now():
+            raise ValueError("Срок выполнения не может быть в прошлом")
+        telegram_id = get_user_telegram_id(message)
+        data = await state.get_data()
+        order_data = {
+            "category_id": data["category_id"],
+            "title": data["title"],
+            "description": data["description"],
+            "desired_price": data["desired_price"],
+            "due_date": due_date.isoformat()
+        }
+        await api_request("POST", f"{API_URL}order/", telegram_id, data=order_data)
+        await message.answer("Заказ успешно создан!", reply_markup=get_main_keyboard())
+        await state.clear()
+    except ValueError:
+        await message.answer("Пожалуйста, введите дату в формате ДД.ММ.ГГГГ и убедитесь, что она в будущем.")
     except Exception as e:
-        await callback.message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard())
-    await state.clear()
-    await callback.answer()
+        await message.answer(f"Ошибка создания заказа: {e}", reply_markup=get_main_keyboard())
+        await state.clear()
 
-@router.callback_query(F.data == "cancel_order")
-async def cancel_order(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.answer("Создание заказа отменено.", reply_markup=get_main_keyboard())
+@router.message(CreateOrder.due_date, F.text == "Отмена")
+async def cancel_order_creation(message: Message, state: FSMContext):
     await state.clear()
-    await callback.answer()
+    await message.answer("Создание заказа отменено.", reply_markup=get_main_keyboard())

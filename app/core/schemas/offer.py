@@ -16,11 +16,13 @@ class OfferRead(BaseSchema):
     estimated_time: int
     status: OfferStatus
     created_at: datetime
+    start_date: Optional[datetime]  # Добавлено
 
 class OfferCreate(BaseSchema):
     order_id: int
     price: float
     estimated_time: int
+    start_date: Optional[datetime]  # Добавлено
 
     model_config = {"str_strip_whitespace": True}
 
@@ -28,3 +30,4 @@ class OfferUpdate(BaseSchema):
     price: Optional[float] = None
     estimated_time: Optional[int] = None
     status: Optional[OfferStatus] = None
+    start_date: Optional[datetime] = None  # Добавлено

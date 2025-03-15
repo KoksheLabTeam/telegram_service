@@ -1,103 +1,155 @@
-from aiogram import Router, F, types
+from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from app.bot.config import ADMIN_TELEGRAM_ID, API_URL
+from app.bot.handlers.utils import api_request, get_user_telegram_id
 import aiohttp
-from app.bot.config import API_URL, ADMIN_TELEGRAM_ID
-from app.bot.handlers.utils import get_user_telegram_id, api_request, create_cities_keyboard, create_categories_keyboard
+import logging
 
 router = Router()
+logger = logging.getLogger(__name__)
 
-def get_main_keyboard(is_admin: bool = False) -> ReplyKeyboardMarkup:
-    keyboard = [
+def get_main_keyboard(is_admin: bool = False, is_executor: bool = False, is_customer: bool = False):
+    buttons = [
         [KeyboardButton(text="Профиль"), KeyboardButton(text="Создать заказ")],
-        [KeyboardButton(text="Список заказов"), KeyboardButton(text="Сменить роль")],
-        [KeyboardButton(text="Города"), KeyboardButton(text="Категории")],
+        [KeyboardButton(text="Список заказов"), KeyboardButton(text="Сменить роль")]
     ]
+    if is_executor:
+        buttons.append([KeyboardButton(text="Создать предложение")])
+    if is_customer:
+        buttons.append([KeyboardButton(text="Посмотреть предложения")])
     if is_admin:
-        keyboard.append([KeyboardButton(text="Админ-панель")])
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+        buttons.append([KeyboardButton(text="Админ-панель")])
+    return ReplyKeyboardMarkup(
+        keyboard=buttons,
+        resize_keyboard=True,
+        row_width=2
+    )
+
+async def api_request_no_auth(method: str, url: str):
+    async with aiohttp.ClientSession() as session:
+        if method == "GET":
+            async with session.get(url) as response:
+                if response.status != 200:
+                    raise Exception(f"Ошибка {response.status}: {await response.text()}")
+                return await response.json()
 
 @router.message(Command("start"))
-async def start_command(message: types.Message):
-    telegram_id = await get_user_telegram_id(message)
-    is_admin = telegram_id == ADMIN_TELEGRAM_ID
-    user_data = {
-        "telegram_id": telegram_id,
-        "name": message.from_user.full_name or "Unnamed",
-        "username": message.from_user.username,
-        "is_customer": True,
-        "is_executor": False,
-        "city_id": 1
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(f"{API_URL}user/", json=user_data, headers={"x-telegram-id": str(telegram_id)}) as create_resp:
-            if create_resp.status in [200, 201]:
-                await message.answer("Добро пожаловать! Вы зарегистрированы.", reply_markup=get_main_keyboard(is_admin))
-            elif create_resp.status == 400:
-                async with session.get(f"{API_URL}user/by_telegram_id/{telegram_id}", headers={"x-telegram-id": str(telegram_id)}) as user_resp:
-                    user = await user_resp.json()
-                    role = "Заказчик" if user.get("is_customer") else "Исполнитель" if user.get("is_executor") else "Не определена"
-                    await message.answer(f"Добро пожаловать обратно! Ваша роль: {role}", reply_markup=get_main_keyboard(is_admin))
-            else:
-                await message.answer(f"Ошибка регистрации: {await create_resp.text()} (Статус: {create_resp.status})")
+async def start_command(message: Message):
+    is_admin = message.from_user.id == ADMIN_TELEGRAM_ID
+    telegram_id = get_user_telegram_id(message)
+    try:
+        user = await api_request("GET", f"{API_URL}user/by_telegram_id/{telegram_id}", telegram_id)
+        is_executor = user["is_executor"]
+        is_customer = user["is_customer"]
+    except Exception as e:
+        if "404" in str(e):
+            try:
+                cities = await api_request_no_auth("GET", f"{API_URL}city/")
+                if not cities:
+                    await message.answer("В системе нет городов. Обратитесь к администратору.")
+                    return
+                city_id = cities[0]["id"]
+            except Exception as city_error:
+                await message.answer(f"Ошибка с городами: {city_error}")
+                return
+
+            user_data = {
+                "telegram_id": telegram_id,
+                "name": message.from_user.full_name or "Unnamed",
+                "username": message.from_user.username,
+                "is_customer": True,
+                "is_executor": False,
+                "city_id": city_id
+            }
+            try:
+                await api_request("POST", f"{API_URL}user/", telegram_id, data=user_data)
+                is_executor = False
+                is_customer = True
+            except Exception as create_error:
+                await message.answer(f"Ошибка создания профиля: {create_error}")
+                return
+        else:
+            await message.answer(f"Ошибка при проверке профиля: {e}")
+            return
+    await message.answer("Добро пожаловать!", reply_markup=get_main_keyboard(is_admin, is_executor, is_customer))
 
 @router.message(F.text == "Профиль")
-async def show_profile(message: types.Message):
-    telegram_id = message.from_user.id
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_URL}user/by_telegram_id/{telegram_id}", headers={"x-telegram-id": str(telegram_id)}) as user_resp:
-            user = await user_resp.json()
-            role = "Заказчик" if user.get("is_customer") else "Исполнитель" if user.get("is_executor") else "Не определена"
-            city = user.get("city", {}).get("name", "Не указан")
-            text = f"Ваш профиль:\nИмя: {user['name']}\nUsername: {user['username']}\nРоль: {role}\nГород: {city}"
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Изменить имя", callback_data="update_name")],
-                [InlineKeyboardButton(text="Изменить город", callback_data="update_city")],
-                [InlineKeyboardButton(text="Изменить категории", callback_data="update_categories")],
-                [InlineKeyboardButton(text="Назад", callback_data="back")]
-            ])
-            await message.answer(text, reply_markup=keyboard)
-
-@router.callback_query(F.data == "update_city")
-async def update_city(callback: types.CallbackQuery):
-    telegram_id = callback.from_user.id
+async def show_profile(message: Message):
+    telegram_id = get_user_telegram_id(message)
     try:
-        cities = await api_request("GET", f"{API_URL}city/", telegram_id)
-        keyboard = create_cities_keyboard(cities)
-        await callback.message.answer("Выберите город:", reply_markup=keyboard)
+        user = await api_request("GET", f"{API_URL}user/by_telegram_id/{telegram_id}", telegram_id)
+        role = "Заказчик" if user["is_customer"] else "Исполнитель" if user["is_executor"] else "Не определена"
+        city = await api_request("GET", f"{API_URL}city/{user['city_id']}", telegram_id)
+        text = f"Имя: {user['name']}\nРоль: {role}\nГород: {city['name']}\nРейтинг: {user['rating']}"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Изменить имя", callback_data="update_name")],  # Исправлен callback_data
+            [InlineKeyboardButton(text="Назад", callback_data="back")]
+        ])
+        await message.answer(text, reply_markup=keyboard)
     except Exception as e:
-        await callback.message.answer(f"Ошибка: {e}")
+        await message.answer(f"Ошибка загрузки профиля: {e}", reply_markup=get_main_keyboard())
+
+@router.message(F.text == "Список заказов")
+async def show_orders(message: Message):  # Исправлено имя функции
+    telegram_id = get_user_telegram_id(message)
+    try:
+        user = await api_request("GET", f"{API_URL}user/by_telegram_id/{telegram_id}", telegram_id)
+        is_executor = user["is_executor"]
+        is_customer = user["is_customer"]
+        is_admin = telegram_id == ADMIN_TELEGRAM_ID
+        if is_executor:
+            url = f"{API_URL}order/available"
+            logger.info(f"Запрос для исполнителя: {url}")
+            orders = await api_request("GET", url, telegram_id)
+            title = "Доступные заказы:"
+        else:
+            url = f"{API_URL}order/"
+            logger.info(f"Запрос для заказчика: {url}")
+            orders = await api_request("GET", url, telegram_id)
+            title = "Ваши заказы:"
+
+        if not orders:
+            await message.answer(f"{title.split(':')[0]} пока нет.", reply_markup=get_main_keyboard(is_admin, is_executor, is_customer))
+            return
+
+        response = f"{title}\n\n"
+        for order in orders:
+            status_map = {
+                "pending": "Ожидает",
+                "in_progress": "В процессе",
+                "completed": "Завершён",
+                "canceled": "Отменён"
+            }
+            status = status_map.get(order["status"], order["status"])
+            due_date = order["due_date"].split("T")[0]
+            response += (
+                f"ID: {order['id']}\n"
+                f"Название: {order['title']}\n"
+                f"Статус: {status}\n"
+                f"Желаемая цена: {order['desired_price']} тенге\n"
+                f"Срок: {due_date}\n\n"
+            )
+        await message.answer(response.strip(), reply_markup=get_main_keyboard(is_admin, is_executor, is_customer))
+    except Exception as e:
+        logger.error(f"Ошибка в show_orders: {e}")
+        await message.answer(f"Ошибка загрузки заказов: {e}", reply_markup=get_main_keyboard())
+
+@router.callback_query(F.data == "update_name")
+async def update_name(callback: CallbackQuery):
+    await callback.message.answer("Функция изменения имени пока не реализована.")
     await callback.answer()
 
-@router.callback_query(F.data.startswith("city_"))
-async def select_city(callback: types.CallbackQuery):
-    city_id = int(callback.data.split("_")[1])
+@router.callback_query(F.data == "back")
+async def back_to_main(callback: CallbackQuery):
+    is_admin = callback.from_user.id == ADMIN_TELEGRAM_ID
     telegram_id = callback.from_user.id
     try:
-        await api_request("PATCH", f"{API_URL}user/me", telegram_id, json={"city_id": city_id})
-        await callback.message.answer("Город успешно обновлен!", reply_markup=get_main_keyboard())
-    except Exception as e:
-        await callback.message.answer(f"Ошибка: {e}")
-    await callback.answer()
-
-@router.callback_query(F.data == "update_categories")
-async def update_categories(callback: types.CallbackQuery):
-    telegram_id = callback.from_user.id
-    try:
-        categories = await api_request("GET", f"{API_URL}category/", telegram_id)
-        keyboard = create_categories_keyboard(categories)
-        await callback.message.answer("Выберите категории:", reply_markup=keyboard)
-    except Exception as e:
-        await callback.message.answer(f"Ошибка: {e}")
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("category_"))
-async def select_category(callback: types.CallbackQuery):
-    category_id = int(callback.data.split("_")[1])
-    telegram_id = callback.from_user.id
-    try:
-        await api_request("PATCH", f"{API_URL}user/me", telegram_id, json={"category_ids": [category_id]})
-        await callback.message.answer("Категория успешно обновлена!", reply_markup=get_main_keyboard())
-    except Exception as e:
-        await callback.message.answer(f"Ошибка: {e}")
+        user = await api_request("GET", f"{API_URL}user/by_telegram_id/{telegram_id}", telegram_id)
+        is_executor = user["is_executor"]
+        is_customer = user["is_customer"]
+    except Exception:
+        is_executor = False
+        is_customer = False
+    await callback.message.answer("Главное меню:", reply_markup=get_main_keyboard(is_admin, is_executor, is_customer))
     await callback.answer()
