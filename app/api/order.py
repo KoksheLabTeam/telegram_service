@@ -14,9 +14,8 @@ import logging
 router = APIRouter(prefix="/order", tags=["Order"])
 logger = logging.getLogger(__name__)
 
-
 @router.post("/", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
-def create_order(
+async def create_order(
         data: OrderCreate,
         current_user: Annotated[User, Depends(get_current_user)],
         session: Annotated[Session, Depends(get_session)],
@@ -28,8 +27,15 @@ def create_order(
         raise HTTPException(status_code=403, detail="Только заказчики могут создавать заказы")
     order = order_service.create_order(session, data, current_user.id)
     logger.info(f"Заказ создан: ID {order.id}")
+    # Уведомление исполнителям в соответствующих категориях
+    executors = session.query(User).filter(User.is_executor == True, User.categories.any(id=data.category_id)).all()
+    message = f"Новый заказ '{order.title}' (ID: {order.id}) в вашей категории!\nЦена: {order.desired_price} тенге\nСрок: {order.due_date}"
+    for executor in executors:
+        try:
+            await send_telegram_message(executor.telegram_id, message)
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления исполнителю {executor.id}: {e}")
     return order
-
 
 @router.get("/", response_model=List[OrderRead])
 def get_orders(
@@ -41,7 +47,6 @@ def get_orders(
     orders = order_service.get_orders_by_user(session, current_user.id)
     logger.info(f"Найдено {len(orders)} заказов для пользователя {current_user.id}")
     return orders
-
 
 @router.get("/available", response_model=List[OrderRead])
 def get_available_orders(
@@ -56,7 +61,6 @@ def get_available_orders(
     logger.info(f"Найдено {len(orders)} доступных заказов")
     return orders
 
-
 @router.get("/{id}", response_model=OrderRead)
 def get_order(
         id: int,
@@ -70,7 +74,6 @@ def get_order(
         logger.warning(f"Попытка доступа к заказу ID {id} без прав: {current_user.id}")
         raise HTTPException(status_code=403, detail="Нет прав для просмотра этого заказа")
     return order
-
 
 @router.get("/{id}/offers", response_model=List[OfferRead])
 def get_order_offers(
@@ -90,24 +93,35 @@ def get_order_offers(
         offer.executor_rating = executor.rating  # Добавляем рейтинг исполнителя
     return offers
 
-
 @router.patch("/{id}", response_model=OrderRead)
-def update_order(
+async def update_order(
         id: int,
         data: OrderUpdate,
         current_user: Annotated[User, Depends(get_current_user)],
         session: Annotated[Session, Depends(get_session)],
 ):
-    """Обновить заказ (доступно только заказчику)."""
+    """Обновить заказ (доступно только заказчику или исполнителю для статуса)."""
     logger.info(f"Обновление заказа ID {id} пользователем {current_user.id}")
     order = order_service.get_order_by_id(session, id)
+    if order.customer_id != current_user.id and order.executor_id != current_user.id:
+        logger.warning(f"Попытка обновления заказа ID {id} без прав: {current_user.id}")
+        raise HTTPException(status_code=403, detail="Нет прав для обновления этого заказа")
+    if order.executor_id == current_user.id and data.status == "Выполнен":
+        updated_order = order_service.update_order_by_id(session, data, id)
+        # Уведомление заказчику о завершении
+        customer = session.get(User, order.customer_id)
+        message = f"Ваш заказ '{order.title}' (ID: {id}) выполнен исполнителем!"
+        try:
+            await send_telegram_message(customer.telegram_id, message)
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомления заказчику {customer.id}: {e}")
+        return updated_order
     if order.customer_id != current_user.id:
         logger.warning(f"Попытка обновления заказа ID {id} не заказчиком: {current_user.id}")
         raise HTTPException(status_code=403, detail="Только заказчик может обновлять этот заказ")
     updated_order = order_service.update_order_by_id(session, data, id)
     logger.info(f"Заказ ID {id} обновлён")
     return updated_order
-
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_order(
@@ -161,8 +175,8 @@ async def reject_offer(
     order = order_service.get_order_by_id(session, id)
     if order.customer_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только заказчик может отклонить предложение")
-    if order.status != "pending":
-        raise HTTPException(status_code=400, detail="Нельзя отклонить предложение для заказа не в статусе 'pending'")
+    if order.status != "В_ожидании":
+        raise HTTPException(status_code=400, detail="Нельзя отклонить предложение для заказа не в статусе 'В_ожидании'")
 
     offer = offer_service.get_offer_by_id(session, offer_id)
     if offer.order_id != id:

@@ -33,7 +33,7 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Запуск миграций в онлайн-режиме."""
     connectable = engine_from_config(
-        {"sqlalchemy.url": DB_URL},  # Используем DB_URL напрямую
+        {"sqlalchemy.url": DB_URL},
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
@@ -48,4 +48,4 @@ def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    run_migrations_online()  # Добавлен вызов функции с правильным отступом
+    run_migrations_online()

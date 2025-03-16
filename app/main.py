@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-from app.api.routers import routers  # Предполагается, что это ваш роутер
+from contextlib import asynccontextmanager
+from app.api.routers import routers
 from app.core.models import Base
 from app.core.database.helper import engine, SessionLocal
 from app.core.models.city import City
@@ -7,11 +8,11 @@ from app.core.models.category import Category
 from sqlalchemy.orm import Session
 import logging
 
-app = FastAPI()
-
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Функция инициализации базы данных
 def init_db():
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as session:
@@ -26,12 +27,21 @@ def init_db():
             session.commit()
             logger.info("Добавлена категория по умолчанию: Общие услуги")
 
-@app.on_event("startup")
-async def startup():
-    init_db()
+# Lifespan handler для управления событиями жизненного цикла
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Код, выполняемый при запуске приложения
+    logger.info("Инициализация приложения...")
+    init_db()  # Инициализация базы данных
     logger.info("API запущен, роутеры подключены")
+    yield  # Здесь приложение продолжает работу
+    # Код, выполняемый при завершении работы приложения (если нужен)
+    logger.info("Завершение работы приложения...")
 
-# Проверяем подключение роутера
+# Создание экземпляра FastAPI с lifespan
+app = FastAPI(lifespan=lifespan)
+
+# Подключение роутера
 logger.info(f"Подключение роутера: {routers}")
 app.include_router(routers)
 

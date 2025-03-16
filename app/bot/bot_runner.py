@@ -1,6 +1,11 @@
 from aiogram import Bot, Dispatcher
 from app.bot.config import BOT_TOKEN, ADMIN_TELEGRAM_ID
-from app.bot.handlers import start_router, create_order_router, switch_role_router, admin_router, create_offer_router, manage_offers_router
+from app.bot.handlers import (
+    admin_panel_router, manage_users_router, manage_orders_router, manage_cities_router, manage_categories_router,
+    create_order_router, customer_orders_router, review_router,
+    create_offer_router, complete_order_router, manage_offers_router,
+    start_router, profile_router, switch_role_router
+)
 import asyncio
 import logging
 
@@ -13,12 +18,21 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# Подключение всех роутеров
 dp.include_router(start_router)
-dp.include_router(create_order_router)
+dp.include_router(profile_router)
 dp.include_router(switch_role_router)
-dp.include_router(admin_router)
+dp.include_router(admin_panel_router)
+dp.include_router(manage_users_router)
+dp.include_router(manage_orders_router)
+dp.include_router(manage_cities_router)
+dp.include_router(manage_categories_router)
+dp.include_router(create_order_router)
+dp.include_router(customer_orders_router)
+dp.include_router(review_router)
 dp.include_router(create_offer_router)
-dp.include_router(manage_offers_router)  # Новый роутер
+dp.include_router(manage_offers_router)
+dp.include_router(complete_order_router)
 
 async def main():
     logger.info(f"Бот запущен с токеном: {BOT_TOKEN[:10]}...")

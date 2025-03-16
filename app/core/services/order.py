@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.models.order import Order
 from app.core.schemas.order import OrderCreate, OrderUpdate
 from app.core.services.category import get_category_by_id
+from app.core.models.user import User  # Добавлено
 
 def create_order(session: Session, data: OrderCreate, customer_id: int) -> Order:
     """Создать новый заказ."""

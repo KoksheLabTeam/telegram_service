@@ -2,6 +2,7 @@ from typing import Optional
 from datetime import datetime
 from app.core.schemas.base import BaseSchema
 import enum
+from decimal import Decimal  # Добавлен импорт
 
 class OrderStatus(str, enum.Enum):
     PENDING = "В_ожидании"  # Приводим к верхнему регистру
@@ -16,7 +17,7 @@ class OrderRead(BaseSchema):
     category_id: int
     title: str
     description: Optional[str]
-    desired_price: float
+    desired_price: Decimal
     due_date: datetime
     created_at: datetime
     status: OrderStatus

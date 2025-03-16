@@ -6,12 +6,15 @@ from app.core.models import Order
 from app.core.models.user import User
 from app.core.schemas.order import OrderUpdate, OrderRead
 from app.core.services import offer as offer_service
+from app.core.services import order as order_service
 from app.core.schemas.offer import OfferRead, OfferCreate, OfferUpdate
 from app.api.depends.user import get_current_user
 import aiohttp
-from app.bot.config import BOT_TOKEN  # Импортируем токен бота
+from app.bot.config import BOT_TOKEN
+import logging  # Добавлено
 
 router = APIRouter(prefix="/offer", tags=["Offer"])
+logger = logging.getLogger(__name__)  # Добавлено
 
 
 async def send_telegram_message(chat_id: int, text: str):

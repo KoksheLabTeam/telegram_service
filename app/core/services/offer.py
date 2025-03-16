@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from app.core.models.offer import Offer
 from app.core.models.order import Order
+from app.core.models.user import User  # Добавлено
 from app.core.schemas.offer import OfferCreate, OfferUpdate
 
 def create_offer(session: Session, data: OfferCreate, executor_id: int) -> Offer:

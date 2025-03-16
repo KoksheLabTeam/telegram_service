@@ -6,6 +6,7 @@ from app.core.models.user import User
 from app.core.models.category import Category
 from app.core.schemas.user import UserCreate, UserUpdate
 from app.core.services.city import get_city_by_id
+from app.api.depends.user import ADMIN_TELEGRAM_ID  # Добавлено
 
 def create_user(session: Session, data: UserCreate) -> User:
     """Создать нового пользователя."""
