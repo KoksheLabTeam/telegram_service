@@ -20,7 +20,7 @@ def get_main_keyboard(roles: dict = None):
     if roles.get("is_customer"):
         buttons.append([KeyboardButton(text="Посмотреть предложения")])
     if roles.get("is_admin"):
-        buttons.append([KeyboardButton(text="Админ-панель")])
+        buttons.append([KeyboardButton(text="Админ панель")])  # Изменено с "Админ-панель" на "Админ панель"
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True, row_width=2)
 
 async def api_request_no_auth(method: str, url: str):
@@ -33,6 +33,7 @@ async def api_request_no_auth(method: str, url: str):
 
 @router.message(Command("start"))
 async def start_command(message: Message):
+    logger.info(f"Команда /start от пользователя {message.from_user.id}")
     is_admin = message.from_user.id == ADMIN_TELEGRAM_ID
     telegram_id = get_user_telegram_id(message)
     try:
@@ -40,6 +41,7 @@ async def start_command(message: Message):
         is_executor = user["is_executor"]
         is_customer = user["is_customer"]
     except Exception as e:
+        logger.error(f"Ошибка при проверке профиля: {e}")
         if "404" in str(e):
             try:
                 cities = await api_request_no_auth("GET", f"{API_URL}city/")
@@ -48,6 +50,7 @@ async def start_command(message: Message):
                     return
                 city_id = cities[0]["id"]
             except Exception as city_error:
+                logger.error(f"Ошибка с городами: {city_error}")
                 await message.answer(f"Ошибка с городами: {city_error}")
                 return
 
@@ -64,6 +67,7 @@ async def start_command(message: Message):
                 is_executor = False
                 is_customer = True
             except Exception as create_error:
+                logger.error(f"Ошибка создания профиля: {create_error}")
                 await message.answer(f"Ошибка создания профиля: {create_error}")
                 return
         else:
@@ -74,6 +78,7 @@ async def start_command(message: Message):
 
 @router.message(F.text == "Профиль")
 async def show_profile(message: Message):
+    logger.info(f"Команда 'Профиль' от пользователя {message.from_user.id}")
     telegram_id = get_user_telegram_id(message)
     try:
         user = await api_request("GET", f"{API_URL}user/by_telegram_id/{telegram_id}", telegram_id)
@@ -87,11 +92,13 @@ async def show_profile(message: Message):
         roles = {"is_admin": telegram_id == ADMIN_TELEGRAM_ID, "is_executor": user["is_executor"], "is_customer": user["is_customer"]}
         await message.answer(text, reply_markup=keyboard)
     except Exception as e:
+        logger.error(f"Ошибка в show_profile: {e}")
         roles = {"is_admin": telegram_id == ADMIN_TELEGRAM_ID, "is_executor": False, "is_customer": False}
         await message.answer(f"Ошибка загрузки профиля: {e}", reply_markup=get_main_keyboard(roles))
 
 @router.message(F.text == "Список заказов")
 async def show_orders(message: Message):
+    logger.info(f"Команда 'Список заказов' от пользователя {message.from_user.id}")
     telegram_id = get_user_telegram_id(message)
     try:
         user = await api_request("GET", f"{API_URL}user/by_telegram_id/{telegram_id}", telegram_id)
@@ -143,18 +150,21 @@ async def show_orders(message: Message):
 
 @router.callback_query(F.data == "update_name")
 async def update_name(callback: CallbackQuery):
+    logger.info(f"Обработчик update_name вызван для telegram_id={callback.from_user.id}")
     await callback.message.answer("Функция изменения имени пока не реализована.")
     await callback.answer()
 
 @router.callback_query(F.data == "back")
 async def back_to_main(callback: CallbackQuery):
+    logger.info(f"Обработчик back_to_main вызван для telegram_id={callback.from_user.id}")
     is_admin = callback.from_user.id == ADMIN_TELEGRAM_ID
     telegram_id = callback.from_user.id
     try:
         user = await api_request("GET", f"{API_URL}user/by_telegram_id/{telegram_id}", telegram_id)
         is_executor = user["is_executor"]
         is_customer = user["is_customer"]
-    except Exception:
+    except Exception as e:
+        logger.error(f"Ошибка в back_to_main: {e}")
         is_executor = False
         is_customer = False
     roles = {"is_admin": is_admin, "is_executor": is_executor, "is_customer": is_customer}
