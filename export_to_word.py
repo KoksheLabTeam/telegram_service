@@ -6,7 +6,8 @@ import os
 from datetime import datetime  # Импортируем datetime для работы с датой
 
 # Путь к папке с вашими Python-файлами
-folder_path = "C:/Users/Nurba/PycharmProjects/telegram_service/app"  # Указанная вами папка
+#folder_path = "C:/Users/Nurba/PycharmProjects/telegram_service/app"    # на работе папка
+folder_path =  "C:/Users/User/PycharmProjects/telegram_service/app"    # домашняя папка
 
 # Получаем текущую дату в формате дд.мм
 current_date = datetime.now().strftime("%d.%m")

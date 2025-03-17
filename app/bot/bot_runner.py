@@ -1,11 +1,10 @@
 from aiogram import Bot, Dispatcher
 from app.bot.config import BOT_TOKEN, ADMIN_TELEGRAM_ID
-from app.bot.handlers import start as start_router
-from app.bot.handlers import create_order as create_order_router
-from app.bot.handlers import switch_role as switch_role_router
-from app.bot.handlers import admin as admin_router
-from app.bot.handlers import create_offer as create_offer_router
-from app.bot.handlers import manage_offers as manage_offers_router
+from app.bot.handlers.start import router as start_router
+from app.bot.handlers.switch_role import router as switch_role_router
+from app.bot.handlers.admin import admin_routers
+from app.bot.handlers.customer import customer_routers
+from app.bot.handlers.executor import executor_routers
 import asyncio
 import logging
 
@@ -18,12 +17,15 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-dp.include_router(start_router.router)
-dp.include_router(create_order_router.router)
-dp.include_router(switch_role_router.router)
-dp.include_router(admin_router.router)
-dp.include_router(create_offer_router.router)
-dp.include_router(manage_offers_router.router)
+# Подключаем роутеры
+dp.include_router(start_router)
+dp.include_router(switch_role_router)
+for admin_router in admin_routers:
+    dp.include_router(admin_router)
+for customer_router in customer_routers:
+    dp.include_router(customer_router)
+for executor_router in executor_routers:
+    dp.include_router(executor_router)
 
 async def main():
     logger.info(f"Бот запущен с токеном: {BOT_TOKEN[:10]}...")
