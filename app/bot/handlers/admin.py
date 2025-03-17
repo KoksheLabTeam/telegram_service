@@ -16,9 +16,8 @@ class AdminPanel(StatesGroup):
     add_city = State()
     edit_city = State()
     delete_city = State()
-    change_all_cities = State()
 
-@router.message(F.text == "Админ панель")  # Изменено с "Админ-панель" на "Админ панель"
+@router.message(F.text == "Админ панель")
 async def admin_panel(message: Message):
     logger.info(f"Попытка доступа к админ-панели от пользователя {message.from_user.id}")
     if message.from_user.id != ADMIN_TELEGRAM_ID:
@@ -33,7 +32,6 @@ async def admin_panel(message: Message):
         [InlineKeyboardButton(text="Добавить город", callback_data="add_city")],
         [InlineKeyboardButton(text="Изменить город", callback_data="edit_city")],
         [InlineKeyboardButton(text="Удалить город", callback_data="delete_city")],
-        [InlineKeyboardButton(text="Изменить города всем", callback_data="change_all_cities")],
         [InlineKeyboardButton(text="Назад", callback_data="back")]
     ])
     await message.answer("Админ-панель:", reply_markup=keyboard)
@@ -141,6 +139,81 @@ async def process_delete_order(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Ошибка в process_delete_order: {e}")
         await message.answer(f"Ошибка удаления заказа: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
+    await state.clear()
+
+@router.callback_query(F.data == "add_city")
+async def start_add_city(callback: CallbackQuery, state: FSMContext):
+    logger.info(f"Обработчик start_add_city вызван для telegram_id={callback.from_user.id}")
+    await callback.message.answer("Введите название города для добавления:")
+    await state.set_state(AdminPanel.add_city)
+    await callback.answer()
+
+@router.message(AdminPanel.add_city)
+async def process_add_city(message: Message, state: FSMContext):
+    logger.info(f"Обработчик process_add_city вызван для telegram_id={message.from_user.id}")
+    telegram_id = get_user_telegram_id(message)
+    try:
+        city_name = message.text.strip()
+        if not city_name:
+            await message.answer("Название города не может быть пустым.")
+            return
+        # Изменено json на data
+        await api_request("POST", f"{API_URL}city/", telegram_id, data={"name": city_name})
+        await message.answer(f"Город '{city_name}' добавлен.", reply_markup=get_main_keyboard({"is_admin": True}))
+    except Exception as e:
+        logger.error(f"Ошибка в process_add_city: {e}")
+        await message.answer(f"Ошибка добавления города: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
+    await state.clear()
+
+@router.callback_query(F.data == "edit_city")
+async def start_edit_city(callback: CallbackQuery, state: FSMContext):
+    logger.info(f"Обработчик start_edit_city вызван для telegram_id={callback.from_user.id}")
+    await callback.message.answer("Введите ID города и новое название (например, '1 Алматы'):")
+    await state.set_state(AdminPanel.edit_city)
+    await callback.answer()
+
+@router.message(AdminPanel.edit_city)
+async def process_edit_city(message: Message, state: FSMContext):
+    logger.info(f"Обработчик process_edit_city вызван для telegram_id={message.from_user.id}")
+    telegram_id = get_user_telegram_id(message)
+    try:
+        parts = message.text.strip().split(" ", 1)
+        if len(parts) != 2:
+            await message.answer("Пожалуйста, введите ID и новое название через пробел (например, '1 Алматы').")
+            return
+        city_id, new_name = parts[0], parts[1]
+        city_id = int(city_id)
+        # Предполагается, что API принимает PUT-запрос для изменения города
+        await api_request("PUT", f"{API_URL}city/{city_id}", telegram_id, data={"name": new_name})
+        await message.answer(f"Город с ID {city_id} изменён на '{new_name}'.", reply_markup=get_main_keyboard({"is_admin": True}))
+    except ValueError:
+        await message.answer("ID города должен быть числом.")
+    except Exception as e:
+        logger.error(f"Ошибка в process_edit_city: {e}")
+        await message.answer(f"Ошибка изменения города: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
+    await state.clear()
+
+@router.callback_query(F.data == "delete_city")
+async def start_delete_city(callback: CallbackQuery, state: FSMContext):
+    logger.info(f"Обработчик start_delete_city вызван для telegram_id={callback.from_user.id}")
+    await callback.message.answer("Введите ID города для удаления:")
+    await state.set_state(AdminPanel.delete_city)
+    await callback.answer()
+
+@router.message(AdminPanel.delete_city)
+async def process_delete_city(message: Message, state: FSMContext):
+    logger.info(f"Обработчик process_delete_city вызван для telegram_id={message.from_user.id}")
+    telegram_id = get_user_telegram_id(message)
+    try:
+        city_id = int(message.text)
+        # Предполагается, что API принимает DELETE-запрос для удаления города
+        await api_request("DELETE", f"{API_URL}city/{city_id}", telegram_id)
+        await message.answer(f"Город с ID {city_id} удалён.", reply_markup=get_main_keyboard({"is_admin": True}))
+    except ValueError:
+        await message.answer("Пожалуйста, введите корректный ID (число).")
+    except Exception as e:
+        logger.error(f"Ошибка в process_delete_city: {e}")
+        await message.answer(f"Ошибка удаления города: {e}", reply_markup=get_main_keyboard({"is_admin": True}))
     await state.clear()
 
 @router.callback_query(F.data == "back")
