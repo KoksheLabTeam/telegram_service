@@ -1,11 +1,19 @@
 import httpx
 from app.bot.config import API_URL, BOT_TOKEN
 import logging
+from typing import Union  # Добавлено
+from aiogram.types import Message, CallbackQuery  # Добавлено
 
 logger = logging.getLogger(__name__)
 
-async def get_user_telegram_id(message: "Message") -> int:
-    return message.from_user.id
+async def get_user_info():
+    async with httpx.ClientSession() as session:
+        try:
+            async with session.get('http://localhost:8011/api/user/me') as response:
+                return await response.json()
+        except httpx.ClientConnectionError as e:
+            logger.error(f"Не удалось подключиться к API: {e}")
+            return None
 
 async def api_request(method: str, endpoint: str, telegram_id: int, data: dict = None) -> dict:
     headers = {"X-Telegram-Id": str(telegram_id), "Authorization": f"Bot {BOT_TOKEN}"}
@@ -36,3 +44,12 @@ async def api_request_no_auth(method: str, endpoint: str) -> dict:
         except Exception as e:
             logger.error(f"Неизвестная ошибка при запросе без авторизации {method} {url}: {e}")
             raise Exception(f"Ошибка: {e}")
+
+async def get_user_telegram_id(message_or_callback: Union[Message, CallbackQuery]) -> int:
+    """Извлекает Telegram ID из объекта сообщения или коллбэка."""
+    if isinstance(message_or_callback, Message):
+        return message_or_callback.from_user.id
+    elif isinstance(message_or_callback, CallbackQuery):
+        return message_or_callback.from_user.id
+    else:
+        raise ValueError("Аргумент должен быть Message или CallbackQuery")
