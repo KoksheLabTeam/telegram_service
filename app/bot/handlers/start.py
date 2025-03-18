@@ -177,25 +177,28 @@ async def process_name_change(message: Message, state: FSMContext):
 @router.message(ProfileEditStates.waiting_for_city)
 async def process_city_change(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
+    roles = await get_user_roles(telegram_id)
+    # Если пользователь — администратор, проверяем, не в админ-состоянии ли он
+    current_state = await state.get_state()
+    if roles["is_admin"] and current_state != "ProfileEditStates:waiting_for_city":
+        await message.answer("Вы находитесь в режиме админ-панели. Завершите действие там.")
+        return
     try:
         city_id = int(message.text.strip())
         update_data = {"city_id": city_id}
+        logger.info(f"Профиль: PATCH-запрос на {API_URL}user/me с данными: {update_data}")
         await api_request("PATCH", f"{API_URL}user/me", telegram_id, data=update_data)
         await message.answer(
-            "Город успешно изменён. Выберите действие в меню ниже:",
-            reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
+            "Город успешно изменён в вашем профиле.",
+            reply_markup=get_main_keyboard(roles)
         )
         await state.clear()
-        await show_profile(message, state)  # Показываем обновленный профиль
+        await show_profile(message, state)
     except ValueError:
         await message.answer("Пожалуйста, введите корректный ID города.")
     except Exception as e:
         logger.error(f"Ошибка при изменении города: {e}")
-        roles = await get_user_roles(telegram_id)
-        await message.answer(
-            f"Ошибка: {e}. Выберите действие в меню ниже:",
-            reply_markup=get_main_keyboard(roles)
-        )
+        await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(roles))
         await state.clear()
 
 @router.message(ProfileEditStates.waiting_for_category)

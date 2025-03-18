@@ -6,7 +6,7 @@ from app.bot.handlers.common import api_request, get_main_keyboard, get_user_rol
 from app.bot.config import API_URL
 import logging
 
-from app.bot.handlers.customer.main import EditOrderStates
+from app.bot.handlers.customer.main import OrderStates
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -107,4 +107,4 @@ async def edit_order_start(message: Message, state: FSMContext):
         return
     response = "Выберите заказ:\n" + "\n".join([f"ID: {o['id']} - {o['title']}" for o in editable_orders])
     await message.answer(response + "\nВведите ID заказа:")
-    await state.set_state(EditOrderStates.select_order)
+    await state.set_state(OrderStates.select_order)
