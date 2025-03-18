@@ -44,29 +44,35 @@ def get_users(session: Session) -> list[User]:
     """Получить список всех пользователей."""
     return session.scalars(select(User)).all()
 
+
+# app\core\services\user.py
 def update_user_by_id(session: Session, data: UserUpdate, id: int) -> User:
-    """Обновить данные пользователя по ID."""
-    from app.api.depends.user import ADMIN_TELEGRAM_ID  # Импортируем здесь
+    from app.api.depends.user import ADMIN_TELEGRAM_ID
+    import logging
+    logger = logging.getLogger(__name__)
+
     user = get_user_by_id(session, id)
     update_data = data.model_dump(exclude_unset=True, exclude_none=True)
     if "city_id" in update_data:
-        get_city_by_id(session, data.city_id)  # Проверка существования города
+        get_city_by_id(session, data.city_id)
     if "category_ids" in update_data and data.category_ids is not None:
         categories = session.query(Category).filter(Category.id.in_(data.category_ids)).all()
         if len(categories) != len(data.category_ids):
             raise HTTPException(status_code=404, detail="Одна или несколько категорий не найдены")
         user.categories = categories
+        logger.info(f"Обновлены категории для пользователя {id}: {[cat.id for cat in categories]}")
         del update_data["category_ids"]
     for key, value in update_data.items():
         setattr(user, key, value)
-    # Синхронизируем is_admin с ADMIN_TELEGRAM_ID
     if user.telegram_id == ADMIN_TELEGRAM_ID:
         user.is_admin = True
     try:
         session.commit()
         session.refresh(user)
+        logger.info(f"Пользователь {id} после обновления: category_ids={[cat.id for cat in user.categories]}")
     except SQLAlchemyError as e:
         session.rollback()
+        logger.error(f"Ошибка SQL при обновлении пользователя {id}: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка при обновлении пользователя: {e}")
     return user
 

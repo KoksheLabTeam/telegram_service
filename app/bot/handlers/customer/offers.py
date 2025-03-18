@@ -36,3 +36,75 @@ async def manage_offers(message: Message, state: FSMContext):
     except Exception as e:
         roles = await get_user_roles(telegram_id)
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(roles))
+
+@router.callback_query(ManageOffersStates.select_order, F.data.startswith("view_offers_"))
+async def show_offers(callback: CallbackQuery, state: FSMContext):
+    telegram_id = callback.from_user.id
+    order_id = int(callback.data.split("_")[-1])
+    try:
+        offers = await api_request("GET", f"{API_URL}order/{order_id}/offers", telegram_id)
+        if not offers:
+            await callback.message.edit_text("По этому заказу нет предложений.", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
+            await state.clear()
+            return
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"Цена: {offer['price']} тг, Время: {offer['estimated_time']} ч",
+                                  callback_data=f"offer_{offer['id']}")]
+            for offer in offers
+        ] + [[InlineKeyboardButton(text="Назад", callback_data="back")]])
+        await callback.message.edit_text("Предложения по заказу:", reply_markup=keyboard)
+    except Exception as e:
+        await callback.message.edit_text(f"Ошибка: {e}", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
+        await state.clear()
+    await callback.answer()
+
+@router.callback_query(ManageOffersStates.select_order, F.data.startswith("offer_"))
+async def manage_offer(callback: CallbackQuery, state: FSMContext):
+    telegram_id = callback.from_user.id
+    offer_id = int(callback.data.split("_")[-1])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Принять", callback_data=f"accept_{offer_id}"),
+         InlineKeyboardButton(text="Отклонить", callback_data=f"reject_{offer_id}")],
+        [InlineKeyboardButton(text="Назад", callback_data="back")]
+    ])
+    await callback.message.edit_text("Выберите действие с предложением:", reply_markup=keyboard)
+    await callback.answer()
+
+@router.callback_query(ManageOffersStates.select_order, F.data.startswith("accept_"))
+async def accept_offer(callback: CallbackQuery, state: FSMContext):
+    telegram_id = callback.from_user.id
+    offer_id = int(callback.data.split("_")[-1])
+    try:
+        order = await api_request("POST", f"{API_URL}offer/{offer_id}/offers/{offer_id}/accept", telegram_id)
+        await callback.message.edit_text(f"Предложение принято, заказ ID {order['id']} в прогрессе!",
+                                         reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
+        await state.clear()
+    except Exception as e:
+        await callback.message.edit_text(f"Ошибка: {e}", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
+        await state.clear()
+    await callback.answer()
+
+@router.callback_query(ManageOffersStates.select_order, F.data.startswith("reject_"))
+async def reject_offer(callback: CallbackQuery, state: FSMContext):
+    telegram_id = callback.from_user.id
+    offer_id = int(callback.data.split("_")[-1])
+    try:
+        await api_request("POST", f"{API_URL}offer/{offer_id}/offers/{offer_id}/reject", telegram_id)
+        await callback.message.edit_text("Предложение отклонено.", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
+        await state.clear()
+    except Exception as e:
+        await callback.message.edit_text(f"Ошибка: {e}", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
+        await state.clear()
+    await callback.answer()
+
+@router.callback_query(ManageOffersStates.select_order, F.data == "back")
+async def back_to_orders(callback: CallbackQuery, state: FSMContext):
+    await manage_offers(callback.message, state)
+    await callback.answer()
+
+@router.callback_query(ManageOffersStates.select_order, F.data == "cancel")
+async def cancel_offers(callback: CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("Действие отменено.", reply_markup=get_main_keyboard(await get_user_roles(callback.from_user.id)))
+    await state.clear()
+    await callback.answer()

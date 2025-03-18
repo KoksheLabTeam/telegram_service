@@ -30,6 +30,9 @@ async def api_request(method: str, url: str, telegram_id: int, data: dict = None
                 async with session.patch(url, headers=headers, json=data) as response:
                     if response.status != 200:
                         raise Exception(f"Ошибка {response.status}: {await response.text()}")
+                    text = await response.text()
+                    if not text:  # Проверяем, есть ли тело ответа
+                        raise Exception("Сервер вернул пустой ответ")
                     return await response.json()
             elif method == "DELETE":
                 async with session.delete(url, headers=headers) as response:
@@ -54,19 +57,25 @@ def get_user_telegram_id(message: Message) -> int:
     return message.from_user.id
 
 # Основная клавиатура
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
 def get_main_keyboard(roles: dict = None) -> ReplyKeyboardMarkup:
     roles = roles or {}
     buttons = [
-        [KeyboardButton(text="Профиль"), KeyboardButton(text="Создать заказ")],
-        [KeyboardButton(text="Список заказов"), KeyboardButton(text="Сменить роль")]
+        [KeyboardButton(text="Профиль"), KeyboardButton(text="Список заказов")],
+        [KeyboardButton(text="Сменить роль")]
     ]
+    # "Создать заказ" только для заказчиков
+    if roles.get("is_customer"):
+        buttons[0].insert(1, KeyboardButton(text="Создать заказ"))
+    # "Создать предложение" только для исполнителей
     if roles.get("is_executor"):
         buttons.append([KeyboardButton(text="Создать предложение")])
     if roles.get("is_customer"):
         buttons.append([KeyboardButton(text="Посмотреть предложения")])
     if roles.get("is_admin"):
         buttons.append([KeyboardButton(text="Админ панель")])
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True, row_width=2)
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 # Функция для получения роли пользователя
 async def get_user_roles(telegram_id: int) -> dict:

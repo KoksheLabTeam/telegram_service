@@ -1,8 +1,8 @@
-"""Еще одна попытка перемиграции после изменений
+"""Initial migration from current models2
 
-Revision ID: b343e50c4c1a
-Revises: 92fdddd0c03c
-Create Date: 2025-03-15 22:54:41.125060
+Revision ID: b2677e3291ae
+Revises: 21f870535022
+Create Date: 2025-03-18 14:24:18.465539
 
 """
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "b343e50c4c1a"
-down_revision: Union[str, None] = "92fdddd0c03c"
+revision: str = "b2677e3291ae"
+down_revision: Union[str, None] = "21f870535022"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -1,48 +1,62 @@
 from aiogram import Router, F
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
+from aiogram.fsm.context import FSMContext
 from app.bot.handlers.common import api_request, get_main_keyboard, get_user_roles
-from app.bot.config import ADMIN_TELEGRAM_ID, API_URL
+from app.bot.config import API_URL
+import logging
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 @router.message(F.text == "Сменить роль")
-async def switch_role(message: Message):
+async def switch_role_start(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
-    try:
-        user = await api_request("GET", f"{API_URL}user/me", telegram_id)
-        current_role = "Заказчик" if user["is_customer"] else "Исполнитель" if user["is_executor"] else "Не определена"
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Заказчик", callback_data="role_customer")],
-            [InlineKeyboardButton(text="Исполнитель", callback_data="role_executor")],
-            [InlineKeyboardButton(text="Назад", callback_data="back")]
-        ])
-        await message.answer(f"Текущая роль: {current_role}\nВыберите новую роль:", reply_markup=keyboard)
-    except Exception as e:
-        roles = await get_user_roles(telegram_id)
-        await message.answer(f"Ошибка загрузки текущей роли: {e}", reply_markup=get_main_keyboard(roles))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Заказчик", callback_data="role_customer"),
+            InlineKeyboardButton(text="Исполнитель", callback_data="role_executor")
+        ],
+        [InlineKeyboardButton(text="Отмена", callback_data="cancel")]
+    ])
+    await message.answer("Выберите новую роль:", reply_markup=keyboard)
 
 @router.callback_query(F.data.startswith("role_"))
-async def change_role(callback: CallbackQuery):
+async def switch_role_process(callback: CallbackQuery, state: FSMContext):
     telegram_id = callback.from_user.id
     role = callback.data.split("_")[1]
-    role_name = "Заказчик" if role == "customer" else "Исполнитель"
     try:
-        update_data = {
-            "is_customer": role == "customer",
-            "is_executor": role == "executor"
-        }
-        await api_request("PATCH", f"{API_URL}user/me", telegram_id, data=update_data)
-        user = await api_request("GET", f"{API_URL}user/me", telegram_id)
+        if role == "customer":
+            user_data = {"is_customer": True, "is_executor": False}
+        elif role == "executor":
+            user_data = {"is_customer": False, "is_executor": True}
+        else:
+            raise ValueError("Недопустимая роль")
+        await api_request("PATCH", f"{API_URL}user/me", telegram_id, data=user_data)
         roles = await get_user_roles(telegram_id)
-        await callback.message.answer(f"Роль успешно изменена на: {role_name}", reply_markup=get_main_keyboard(roles))
+        # Удаляем inline-кнопки и возвращаем нижнюю панель
+        await callback.message.edit_text(
+            f"Роль изменена на {'Заказчик' if role == 'customer' else 'Исполнитель'}!"
+        )
+        await callback.message.answer(
+            "Выберите действие в меню ниже:",
+            reply_markup=get_main_keyboard(roles)
+        )
     except Exception as e:
+        logger.error(f"Ошибка смены роли: {e}")
         roles = await get_user_roles(telegram_id)
-        await callback.message.answer(f"Ошибка смены роли: {e}", reply_markup=get_main_keyboard(roles))
+        await callback.message.edit_text(f"Ошибка: {e}")
+        await callback.message.answer(
+            "Выберите действие в меню ниже:",
+            reply_markup=get_main_keyboard(roles)
+        )
     await callback.answer()
 
-@router.callback_query(F.data == "back")
-async def back_to_main(callback: CallbackQuery):
-    telegram_id = callback.from_user.id
-    roles = await get_user_roles(telegram_id)
-    await callback.message.answer("Главное меню:", reply_markup=get_main_keyboard(roles))
+@router.callback_query(F.data == "cancel")
+async def switch_role_cancel(callback: CallbackQuery, state: FSMContext):
+    roles = await get_user_roles(callback.from_user.id)
+    await callback.message.edit_text("Действие отменено.")
+    await callback.message.answer(
+        "Выберите действие в меню ниже:",
+        reply_markup=get_main_keyboard(roles)
+    )
     await callback.answer()

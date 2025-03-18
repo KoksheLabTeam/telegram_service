@@ -20,12 +20,12 @@ def get_user_by_telegram_id(
     user = session.query(User).filter(User.telegram_id == telegram_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    return user
+    return UserRead.from_orm(user)  # Используем from_orm для корректной сериализации
 
 @router.get("/me", response_model=UserRead)
 def get_me(user: Annotated[User, Depends(get_current_user)]):
     """Получить данные текущего пользователя."""
-    return user
+    return UserRead.from_orm(user)
 
 @router.get("/all", response_model=List[UserRead])
 def get_all_users(
@@ -33,7 +33,7 @@ def get_all_users(
     session: Annotated[Session, Depends(get_session)],
 ):
     """Получить список всех пользователей (доступно только администратору)."""
-    return user_service.get_users(session)
+    return [UserRead.from_orm(user) for user in user_service.get_users(session)]
 
 @router.post("/", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def create_user(
@@ -41,7 +41,8 @@ def create_user(
     session: Annotated[Session, Depends(get_session)],
 ):
     """Создать нового пользователя."""
-    return user_service.create_user(session, data)
+    user = user_service.create_user(session, data)
+    return UserRead.from_orm(user)
 
 @router.patch("/me", response_model=UserRead)
 def update_me(
@@ -49,8 +50,8 @@ def update_me(
     user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """Обновить данные текущего пользователя."""
-    return user_service.update_user_by_id(session, data, user.id)
+    updated_user = user_service.update_user_by_id(session, data, user.id)
+    return UserRead.from_orm(updated_user)
 
 @router.patch("/{id}", response_model=UserRead)
 def update_user_by_id(
@@ -60,7 +61,8 @@ def update_user_by_id(
     session: Annotated[Session, Depends(get_session)],
 ):
     """Обновить данные пользователя по ID (доступно только администратору)."""
-    return user_service.update_user_by_id(session, data, id)
+    updated_user = user_service.update_user_by_id(session, data, id)
+    return UserRead.from_orm(updated_user)
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(

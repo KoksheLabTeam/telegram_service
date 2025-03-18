@@ -1,6 +1,10 @@
 from typing import Optional, List
 from app.core.schemas.base import BaseSchema
 
+# app\core\schemas\user.py
+from typing import Optional, List
+from app.core.schemas.base import BaseSchema
+
 class UserRead(BaseSchema):
     id: int
     telegram_id: int
@@ -12,6 +16,13 @@ class UserRead(BaseSchema):
     city_id: int
     rating: float
     completed_orders: int
+    category_ids: Optional[List[int]] = None  # Добавляем поле для категорий
+
+    @classmethod
+    def from_orm(cls, obj):
+        data = super().from_orm(obj).__dict__
+        data["category_ids"] = [cat.id for cat in obj.categories] if obj.categories else []
+        return cls(**data)
 
 class UserCreate(BaseSchema):
     telegram_id: int
