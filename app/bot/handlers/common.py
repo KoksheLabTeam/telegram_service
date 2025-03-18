@@ -31,7 +31,7 @@ async def api_request(method: str, url: str, telegram_id: int, data: dict = None
                     if response.status != 200:
                         raise Exception(f"Ошибка {response.status}: {await response.text()}")
                     text = await response.text()
-                    if not text:  # Проверяем, есть ли тело ответа
+                    if not text:
                         raise Exception("Сервер вернул пустой ответ")
                     return await response.json()
             elif method == "DELETE":
@@ -65,14 +65,17 @@ def get_main_keyboard(roles: dict = None) -> ReplyKeyboardMarkup:
         [KeyboardButton(text="Профиль"), KeyboardButton(text="Список заказов")],
         [KeyboardButton(text="Сменить роль")]
     ]
-    # "Создать заказ" только для заказчиков
+    # Кнопки для заказчиков
     if roles.get("is_customer"):
         buttons[0].insert(1, KeyboardButton(text="Создать заказ"))
-    # "Создать предложение" только для исполнителей
+        buttons.append([KeyboardButton(text="Отменить заказ"), KeyboardButton(text="Редактировать заказ")])
+        buttons.append([KeyboardButton(text="Удалить заказ")])
+        buttons.append([KeyboardButton(text="Посмотреть предложения")])
+        buttons.append([KeyboardButton(text="Оставить отзыв")])
+    # Кнопки для исполнителей
     if roles.get("is_executor"):
         buttons.append([KeyboardButton(text="Создать предложение")])
-    if roles.get("is_customer"):
-        buttons.append([KeyboardButton(text="Посмотреть предложения")])
+        buttons.append([KeyboardButton(text="Список доступных заказов")])
     if roles.get("is_admin"):
         buttons.append([KeyboardButton(text="Админ панель")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)

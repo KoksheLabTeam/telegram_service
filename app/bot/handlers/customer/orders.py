@@ -6,6 +6,8 @@ from app.bot.handlers.common import api_request, get_main_keyboard, get_user_rol
 from app.bot.config import API_URL
 import logging
 
+from app.bot.handlers.customer.main import EditOrderStates
+
 router = Router()
 logger = logging.getLogger(__name__)
 
@@ -90,3 +92,19 @@ async def process_category(message: Message, state: FSMContext):
             reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
         )
         await state.clear()
+
+@router.message(F.text == "Редактировать заказ")
+async def edit_order_start(message: Message, state: FSMContext):
+    telegram_id = message.from_user.id
+    roles = await get_user_roles(telegram_id)
+    if not roles["is_customer"]:
+        await message.answer("Только заказчики могут редактировать заказы.", reply_markup=get_main_keyboard(roles))
+        return
+    orders = await api_request("GET", f"{API_URL}order/", telegram_id)
+    editable_orders = [o for o in orders if o["status"] == "В_ожидании"]
+    if not editable_orders:
+        await message.answer("Нет заказов для редактирования.", reply_markup=get_main_keyboard(roles))
+        return
+    response = "Выберите заказ:\n" + "\n".join([f"ID: {o['id']} - {o['title']}" for o in editable_orders])
+    await message.answer(response + "\nВведите ID заказа:")
+    await state.set_state(EditOrderStates.select_order)
