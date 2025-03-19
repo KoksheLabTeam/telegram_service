@@ -413,10 +413,12 @@ async def list_available_orders(message: Message):
 
     try:
         user_profile = await api_request("GET", f"{API_URL}user/me", telegram_id)
+        logger.info(f"Профиль пользователя: {user_profile}")  # Логируем полный профиль
         executor_categories = set(user_profile.get("category_ids", []))
         executor_city = user_profile.get("city_id")
+        logger.info(f"Город исполнителя: {executor_city}")  # Логируем city_id отдельно
 
-        if not executor_categories or not executor_city:
+        if not executor_categories or executor_city is None:
             await message.answer(
                 "Пожалуйста, обновите профиль, указав категории и город.",
                 reply_markup=get_main_keyboard(roles)
@@ -424,9 +426,10 @@ async def list_available_orders(message: Message):
             return
 
         available_orders = await api_request("GET", f"{API_URL}order/available", telegram_id)
+        logger.info(f"Доступные заказы: {available_orders}")  # Логируем заказы
         filtered_orders = [
             order for order in available_orders
-            if order["category_id"] in executor_categories and order["city_id"] == executor_city
+            if order.get("category_id") in executor_categories and order.get("city_id") == executor_city
         ]
 
         if not filtered_orders:

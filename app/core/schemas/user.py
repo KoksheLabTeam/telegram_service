@@ -1,6 +1,5 @@
 from typing import Optional, List
 from app.core.schemas.base import BaseSchema
-
 # app\core\schemas\user.py
 from typing import Optional, List
 from app.core.schemas.base import BaseSchema

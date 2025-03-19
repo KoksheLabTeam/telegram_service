@@ -4,7 +4,7 @@ from app.core.schemas.base import BaseSchema
 import enum
 
 class OrderStatus(str, enum.Enum):
-    PENDING = "В_ожидании"  # Приводим к верхнему регистру
+    PENDING = "В_ожидании"  # Используем русские значения, как в миграции 3057d1616d62
     IN_PROGRESS = "В_прогрессе"
     COMPLETED = "Выполнен"
     CANCELED = "Отменен"
@@ -14,12 +14,20 @@ class OrderRead(BaseSchema):
     customer_id: int
     executor_id: Optional[int]
     category_id: int
+    city_id: int
     title: str
     description: Optional[str]
     desired_price: float
     due_date: datetime
     created_at: datetime
     status: OrderStatus
+
+    @classmethod
+    def from_orm(cls, obj):
+        data = super().from_orm(obj).__dict__
+        # Безопасно обрабатываем случай, если customer отсутствует
+        data["city_id"] = obj.customer.city_id if obj.customer else 0
+        return cls(**data)
 
 class OrderCreate(BaseSchema):
     category_id: int

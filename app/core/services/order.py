@@ -1,6 +1,6 @@
 from fastapi.exceptions import HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import SQLAlchemyError
 from app.core.models.order import Order
 from app.core.schemas.order import OrderCreate, OrderUpdate
@@ -33,8 +33,12 @@ def get_orders_by_user(session: Session, user_id: int) -> list[Order]:
     return session.scalars(stmt).all()
 
 def get_available_orders(session: Session) -> list[Order]:
-    """Получить список всех заказов со статусом 'В_ожидании'."""
-    stmt = select(Order).where(Order.status == "В_ожидании", Order.executor_id.is_(None))
+    stmt = (
+        select(Order)
+        .join(User, Order.customer_id == User.id)  # Явное соединение с users
+        .where(Order.status == "В_ожидании", Order.executor_id.is_(None))
+        .options(joinedload(Order.customer))
+    )
     return session.scalars(stmt).all()
 
 def update_order_by_id(session: Session, data: OrderUpdate, id: int) -> Order:

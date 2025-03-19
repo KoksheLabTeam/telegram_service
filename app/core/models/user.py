@@ -1,13 +1,13 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.models.base import Base
 from decimal import Decimal
-from sqlalchemy import ForeignKey, Numeric, CheckConstraint
+from sqlalchemy import ForeignKey, Numeric, CheckConstraint, BigInteger, Identity
 
 class User(Base):
     """Модель пользователя."""
     __tablename__ = "users"
 
-    telegram_id: Mapped[int] = mapped_column(unique=True, nullable=False)  # Уникальный Telegram ID
+    telegram_id: Mapped[int] = mapped_column(BigInteger,Identity(), unique=True, nullable=False)  # Уникальный Telegram ID
     name: Mapped[str] = mapped_column(nullable=False)  # Имя пользователя
     username: Mapped[str | None] = mapped_column(unique=True, nullable=True)  # Уникальное имя в Telegram (опционально)
     is_customer: Mapped[bool] = mapped_column(default=False)  # Является ли заказчиком

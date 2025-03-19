@@ -16,12 +16,11 @@ from app.bot.config import BOT_TOKEN
 router = APIRouter(prefix="/order", tags=["Order"])
 logger = logging.getLogger(__name__)
 
-
 @router.post("/", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
 async def create_order(
-        data: OrderCreate,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    data: OrderCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Создать новый заказ (доступно только заказчикам)."""
     logger.info(f"Создание заказа пользователем {current_user.id}")
@@ -50,38 +49,47 @@ async def create_order(
 
     return order
 
-
 @router.get("/", response_model=List[OrderRead])
 def get_orders(
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Получить список заказов текущего пользователя."""
     logger.info(f"Получение заказов для пользователя {current_user.id}")
-    orders = order_service.get_orders_by_user(session, current_user.id)
-    logger.info(f"Найдено {len(orders)} заказов для пользователя {current_user.id}")
-    return orders
-
+    try:
+        orders = order_service.get_orders_by_user(session, current_user.id)
+        logger.info(f"Найдено {len(orders)} заказов для пользователя {current_user.id}")
+        for order in orders:
+            logger.debug(f"Заказ ID {order.id}: status={order.status}, customer_id={order.customer_id}, customer={order.customer}")
+        return orders
+    except Exception as e:
+        logger.error(f"Ошибка в get_orders: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Внутренняя ошибка сервера: {str(e)}")
 
 @router.get("/available", response_model=List[OrderRead])
 def get_available_orders(
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     logger.info(f"Запрос доступных заказов от пользователя {current_user.id}")
     if not current_user.is_executor:
         logger.warning(f"Попытка доступа к доступным заказам не исполнителем: {current_user.id}")
         raise HTTPException(status_code=403, detail="Только исполнители могут видеть доступные заказы")
-    orders = order_service.get_available_orders(session)
-    logger.info(f"Найдено {len(orders)} доступных заказов")
-    return orders
-
+    try:
+        orders = order_service.get_available_orders(session)
+        logger.info(f"Найдено {len(orders)} доступных заказов: {[order.id for order in orders]}")
+        for order in orders:
+            logger.debug(f"Заказ ID {order.id}: status={order.status}, customer_id={order.customer_id}, customer={order.customer}")
+        return orders
+    except Exception as e:
+        logger.error(f"Ошибка в get_available_orders: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Внутренняя ошибка сервера: {str(e)}")
 
 @router.get("/{id}", response_model=OrderRead)
 def get_order(
-        id: int,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Получить заказ по ID."""
     logger.info(f"Запрос заказа ID {id} от пользователя {current_user.id}")
@@ -91,12 +99,11 @@ def get_order(
         raise HTTPException(status_code=403, detail="Нет прав для просмотра этого заказа")
     return order
 
-
 @router.get("/{id}/offers", response_model=List[OfferRead])
 def get_order_offers(
-        id: int,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Получить список предложений по заказу (доступно только заказчику)."""
     order = order_service.get_order_by_id(session, id)
@@ -109,13 +116,12 @@ def get_order_offers(
         offer.executor_rating = executor.rating  # Добавляем рейтинг исполнителя
     return offers
 
-
 @router.patch("/{id}", response_model=OrderRead)
 async def update_order(
-        id: int,
-        data: OrderUpdate,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    id: int,
+    data: OrderUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Обновить заказ (доступно только заказчику, или исполнителю для завершения)."""
     logger.info(f"Обновление заказа ID {id} пользователем {current_user.id}")
@@ -158,12 +164,11 @@ async def update_order(
     else:
         raise HTTPException(status_code=403, detail="Нет прав для обновления этого заказа")
 
-
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_order(
-        id: int,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Удалить заказ (доступно заказчику только в статусе 'В_ожидании' или администратору)."""
     logger.info(f"Удаление заказа ID {id} пользователем {current_user.id}")
@@ -188,12 +193,11 @@ async def delete_order(
         logger.warning(f"Попытка удаления заказа ID {id} без прав: {current_user.id}")
         raise HTTPException(status_code=403, detail="Нет прав для удаления этого заказа")
 
-
 @router.post("/{id}/cancel", response_model=OrderRead)
 async def cancel_order(
-        id: int,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Отменить заказ (доступно заказчику в течение 5 минут после создания)."""
     logger.info(f"Отмена заказа ID {id} пользователем {current_user.id}")
@@ -215,13 +219,12 @@ async def cancel_order(
     logger.info(f"Заказ ID {id} отменён")
     return canceled_order
 
-
 @router.post("/{id}/offers/{offer_id}/reject", response_model=OfferRead)
 async def reject_offer(
-        id: int,
-        offer_id: int,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    id: int,
+    offer_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Отклонить предложение (доступно только заказчику)."""
     order = order_service.get_order_by_id(session, id)
