@@ -4,13 +4,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from app.bot.handlers.common import api_request, get_main_keyboard, get_user_roles
 from app.bot.config import API_URL, BOT_TOKEN  # Предполагается, что BOT_TOKEN доступен в config
+from app.core.models.order import OrderStatus  # Импортируем перечисление OrderStatus
 import aiohttp
 from datetime import datetime, timedelta
 import logging
+from aiogram_calendar import SimpleCalendar, SimpleCalendarCallback
 
 router = Router()
 logger = logging.getLogger(__name__)
-
 
 # Состояния для управления заказами
 class OrderStates(StatesGroup):
@@ -29,7 +30,6 @@ class OrderStates(StatesGroup):
     offers_sort = State()  # Ввод сортировки для предложений
     chat_with_executor = State()  # Ввод сообщения для исполнителя
 
-
 # Асинхронная функция для отправки сообщения через Telegram API
 async def send_telegram_message(chat_id: int, text: str):
     async with aiohttp.ClientSession() as session:
@@ -43,7 +43,6 @@ async def send_telegram_message(chat_id: int, text: str):
                 logger.error(f"Ошибка отправки сообщения в Telegram: {await response.text()}")
                 return False
             return True
-
 
 # Команда "Создать заказ"
 @router.message(F.text == "Создать заказ")
@@ -69,7 +68,6 @@ async def start_create_order(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Ошибка при запуске создания заказа: {e}")
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(roles))
-
 
 @router.message(OrderStates.edit_title)
 async def process_create_order(message: Message, state: FSMContext):
@@ -135,7 +133,6 @@ async def process_create_order(message: Message, state: FSMContext):
             await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
             await state.clear()
 
-
 # Редактирование заказа
 @router.message(F.text == "Редактировать заказ")
 async def start_edit_order(message: Message, state: FSMContext):
@@ -146,7 +143,7 @@ async def start_edit_order(message: Message, state: FSMContext):
         return
     try:
         orders = await api_request("GET", f"{API_URL}order/", telegram_id)
-        editable_orders = [o for o in orders if o["status"] == "В_ожидании" and o["customer_id"] == telegram_id]
+        editable_orders = [o for o in orders if o["status"] == OrderStatus.PENDING.value and o["customer_id"] == telegram_id]
         if not editable_orders:
             await message.answer("У вас нет заказов, доступных для редактирования.",
                                  reply_markup=get_main_keyboard(roles))
@@ -160,7 +157,6 @@ async def start_edit_order(message: Message, state: FSMContext):
         logger.error(f"Ошибка загрузки заказов для редактирования: {e}")
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(roles))
 
-
 @router.message(OrderStates.select_order_edit)
 async def process_edit_order_selection(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
@@ -168,7 +164,7 @@ async def process_edit_order_selection(message: Message, state: FSMContext):
         order_id = int(message.text.strip())
         orders = await api_request("GET", f"{API_URL}order/", telegram_id)
         order = next((o for o in orders if
-                      o["id"] == order_id and o["status"] == "В_ожидании" and o["customer_id"] == telegram_id), None)
+                      o["id"] == order_id and o["status"] == OrderStatus.PENDING.value and o["customer_id"] == telegram_id), None)
         if not order:
             await message.answer("Заказ не найден или недоступен для редактирования.",
                                  reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
@@ -185,7 +181,6 @@ async def process_edit_order_selection(message: Message, state: FSMContext):
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
         await state.clear()
 
-
 @router.message(OrderStates.edit_title, F.text.regexp(r"^(?!/skip).*$"))
 async def process_edit_title(message: Message, state: FSMContext):
     data = await state.get_data()
@@ -196,14 +191,12 @@ async def process_edit_title(message: Message, state: FSMContext):
         await state.update_data(step="edit_description")
         await state.set_state(OrderStates.edit_description)
 
-
 @router.message(OrderStates.edit_description)
 async def process_edit_description(message: Message, state: FSMContext):
     if message.text.strip() != "/skip":
         await state.update_data(description=message.text.strip())
     await message.answer("Введите новую желаемую цену (в тенге, или /skip для пропуска):")
     await state.set_state(OrderStates.edit_price)
-
 
 @router.message(OrderStates.edit_price)
 async def process_edit_price(message: Message, state: FSMContext):
@@ -220,7 +213,6 @@ async def process_edit_price(message: Message, state: FSMContext):
             return
     await message.answer("Введите новый дедлайн (гггг-мм-дд чч:мм, или /skip для пропуска):")
     await state.set_state(OrderStates.edit_due_date)
-
 
 @router.message(OrderStates.edit_due_date)
 async def process_edit_due_date(message: Message, state: FSMContext):
@@ -264,7 +256,6 @@ async def process_edit_due_date(message: Message, state: FSMContext):
         await message.answer("Ничего не изменено.", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
     await state.clear()
 
-
 # Удаление заказа
 @router.message(F.text == "Удалить заказ")
 async def start_delete_order(message: Message, state: FSMContext):
@@ -275,7 +266,7 @@ async def start_delete_order(message: Message, state: FSMContext):
         return
     try:
         orders = await api_request("GET", f"{API_URL}order/", telegram_id)
-        deletable_orders = [o for o in orders if o["status"] == "В_ожидании" and o["customer_id"] == telegram_id]
+        deletable_orders = [o for o in orders if o["status"] == OrderStatus.PENDING.value and o["customer_id"] == telegram_id]
         if not deletable_orders:
             await message.answer("У вас нет заказов, доступных для удаления.", reply_markup=get_main_keyboard(roles))
             return
@@ -288,7 +279,6 @@ async def start_delete_order(message: Message, state: FSMContext):
         logger.error(f"Ошибка загрузки заказов для удаления: {e}")
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(roles))
 
-
 @router.message(OrderStates.select_order_delete)
 async def process_delete_order(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
@@ -296,7 +286,7 @@ async def process_delete_order(message: Message, state: FSMContext):
         order_id = int(message.text.strip())
         orders = await api_request("GET", f"{API_URL}order/", telegram_id)
         order = next((o for o in orders if
-                      o["id"] == order_id and o["status"] == "В_ожидании" and o["customer_id"] == telegram_id), None)
+                      o["id"] == order_id and o["status"] == OrderStatus.PENDING.value and o["customer_id"] == telegram_id), None)
         if not order:
             await message.answer("Заказ не найден или недоступен для удаления.",
                                  reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
@@ -313,7 +303,6 @@ async def process_delete_order(message: Message, state: FSMContext):
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
         await state.clear()
 
-
 # Просмотр предложений
 @router.message(F.text == "Посмотреть предложения")
 async def start_view_offers(message: Message, state: FSMContext):
@@ -324,7 +313,7 @@ async def start_view_offers(message: Message, state: FSMContext):
         return
     try:
         orders = await api_request("GET", f"{API_URL}order/", telegram_id)
-        pending_orders = [o for o in orders if o["status"] == "В_ожидании" and o["customer_id"] == telegram_id]
+        pending_orders = [o for o in orders if o["status"] == OrderStatus.PENDING.value and o["customer_id"] == telegram_id]
         if not pending_orders:
             await message.answer("У вас нет заказов в ожидании с предложениями.", reply_markup=get_main_keyboard(roles))
             return
@@ -337,7 +326,6 @@ async def start_view_offers(message: Message, state: FSMContext):
         logger.error(f"Ошибка загрузки заказов для просмотра предложений: {e}")
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(roles))
 
-
 @router.message(OrderStates.select_order_offers)
 async def process_select_order_offers(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
@@ -345,7 +333,7 @@ async def process_select_order_offers(message: Message, state: FSMContext):
         order_id = int(message.text.strip())
         orders = await api_request("GET", f"{API_URL}order/", telegram_id)
         order = next((o for o in orders if
-                      o["id"] == order_id and o["status"] == "В_ожидании" and o["customer_id"] == telegram_id), None)
+                      o["id"] == order_id and o["status"] == OrderStatus.PENDING.value and o["customer_id"] == telegram_id), None)
         if not order:
             await message.answer("Заказ не найден или недоступен.",
                                  reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
@@ -368,7 +356,6 @@ async def process_select_order_offers(message: Message, state: FSMContext):
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
         await state.clear()
 
-
 @router.message(OrderStates.offers_filter)
 async def process_offers_filter(message: Message, state: FSMContext):
     text = message.text.strip()
@@ -388,7 +375,6 @@ async def process_offers_filter(message: Message, state: FSMContext):
         "Введите номер (или /skip для без сортировки):"
     )
     await state.set_state(OrderStates.offers_sort)
-
 
 @router.message(OrderStates.offers_sort)
 async def process_offers_sort(message: Message, state: FSMContext):
@@ -457,7 +443,6 @@ async def process_offers_sort(message: Message, state: FSMContext):
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
         await state.clear()
 
-
 @router.callback_query(lambda c: c.data.startswith("accept_offer_"))
 async def process_accept_offer(callback: CallbackQuery):
     telegram_id = callback.from_user.id
@@ -470,7 +455,7 @@ async def process_accept_offer(callback: CallbackQuery):
             return
         updated_order = await api_request("POST", f"{API_URL}offer/{order_id}/offers/{offer_id}/accept", telegram_id)
         await callback.message.edit_text(
-            f"Предложение ID {offer_id} принято! Заказ ID {order_id} теперь в статусе 'В_прогрессе'.",
+            f"Предложение ID {offer_id} принято! Заказ ID {order_id} теперь в статусе 'В процессе'.",
             reply_markup=None
         )
         await callback.answer()
@@ -478,7 +463,6 @@ async def process_accept_offer(callback: CallbackQuery):
         logger.error(f"Ошибка при принятии предложения: {e}")
         await callback.message.edit_text(f"Ошибка: {e}", reply_markup=None)
         await callback.answer()
-
 
 @router.callback_query(lambda c: c.data.startswith("reject_offer_"))
 async def process_reject_offer(callback: CallbackQuery):
@@ -501,7 +485,6 @@ async def process_reject_offer(callback: CallbackQuery):
         await callback.message.edit_text(f"Ошибка: {e}", reply_markup=None)
         await callback.answer()
 
-
 @router.callback_query(lambda c: c.data.startswith("executor_info_"))
 async def process_executor_info(callback: CallbackQuery):
     telegram_id = callback.from_user.id
@@ -522,7 +505,6 @@ async def process_executor_info(callback: CallbackQuery):
         await callback.message.answer(f"Ошибка: {e}")
         await callback.answer()
 
-
 @router.callback_query(lambda c: c.data.startswith("chat_executor_"))
 async def start_chat_with_executor(callback: CallbackQuery, state: FSMContext):
     telegram_id = callback.from_user.id
@@ -541,7 +523,6 @@ async def start_chat_with_executor(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка при запуске чата с исполнителем: {e}")
         await callback.message.edit_text(f"Ошибка: {e}", reply_markup=None)
         await callback.answer()
-
 
 @router.message(OrderStates.chat_with_executor)
 async def process_chat_message(message: Message, state: FSMContext):
@@ -580,7 +561,6 @@ async def process_chat_message(message: Message, state: FSMContext):
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
         await state.clear()
 
-
 # Список заказов
 @router.message(F.text == "Список заказов")
 async def list_orders(message: Message):
@@ -592,15 +572,19 @@ async def list_orders(message: Message):
             await message.answer("У вас нет заказов.", reply_markup=get_main_keyboard(roles))
             return
         response = "Ваши заказы:\n\n"
+        status_display = {
+            OrderStatus.PENDING.value: "Ожидает",
+            OrderStatus.IN_PROGRESS.value: "В процессе",
+            OrderStatus.COMPLETED.value: "Завершён",
+            OrderStatus.CANCELED.value: "Отменён"
+        }
         for order in orders:
-            status = {"В_ожидании": "Ожидает", "В_прогрессе": "В процессе", "Выполнен": "Завершён",
-                      "Отменен": "Отменён"}.get(order["status"], order["status"])
+            status = status_display.get(order["status"], order["status"])
             response += f"ID: {order['id']} - {order['title']} ({status})\n"
         await message.answer(response, reply_markup=get_main_keyboard(roles))
     except Exception as e:
         logger.error(f"Ошибка загрузки заказов: {e}")
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(roles))
-
 
 # Отмена заказа
 @router.message(F.text == "Отменить заказ")
@@ -614,9 +598,8 @@ async def cancel_order_start(message: Message, state: FSMContext):
         orders = await api_request("GET", f"{API_URL}order/", telegram_id)
         cancellable_orders = [
             o for o in orders
-            if o["status"] == "В_ожидании" and o["customer_id"] == telegram_id and
-               (datetime.utcnow() - datetime.fromisoformat(o["created_at"].replace("Z", "+00:00"))) < timedelta(
-                minutes=5)
+            if o["status"] == OrderStatus.PENDING.value and o["customer_id"] == telegram_id and
+               (datetime.utcnow() - datetime.fromisoformat(o["created_at"].replace("Z", "+00:00"))) < timedelta(minutes=5)
         ]
         if not cancellable_orders:
             await message.answer("У вас нет заказов, доступных для отмены.", reply_markup=get_main_keyboard(roles))
@@ -629,7 +612,6 @@ async def cancel_order_start(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Ошибка загрузки заказов для отмены: {e}")
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(roles))
-
 
 @router.message(OrderStates.select_order_cancel)
 async def process_cancel_order(message: Message, state: FSMContext):
@@ -647,7 +629,6 @@ async def process_cancel_order(message: Message, state: FSMContext):
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
         await state.clear()
 
-
 # Оставить отзыв
 @router.message(F.text == "Оставить отзыв")
 async def start_review(message: Message, state: FSMContext):
@@ -658,7 +639,7 @@ async def start_review(message: Message, state: FSMContext):
         return
     try:
         orders = await api_request("GET", f"{API_URL}order/", telegram_id)
-        completed_orders = [o for o in orders if o["status"] == "Выполнен" and o["customer_id"] == telegram_id]
+        completed_orders = [o for o in orders if o["status"] == OrderStatus.COMPLETED.value and o["customer_id"] == telegram_id]
         if not completed_orders:
             await message.answer("У вас нет завершенных заказов для отзыва.", reply_markup=get_main_keyboard(roles))
             return
@@ -671,7 +652,6 @@ async def start_review(message: Message, state: FSMContext):
         logger.error(f"Ошибка загрузки заказов для отзыва: {e}")
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(roles))
 
-
 @router.message(OrderStates.select_order_review)
 async def process_review_order_selection(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
@@ -679,7 +659,7 @@ async def process_review_order_selection(message: Message, state: FSMContext):
         order_id = int(message.text.strip())
         orders = await api_request("GET", f"{API_URL}order/", telegram_id)
         order = next((o for o in orders if
-                      o["id"] == order_id and o["status"] == "Выполнен" and o["customer_id"] == telegram_id), None)
+                      o["id"] == order_id and o["status"] == OrderStatus.COMPLETED.value and o["customer_id"] == telegram_id), None)
         if not order:
             await message.answer("Заказ не найден или не завершен.",
                                  reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
@@ -694,7 +674,6 @@ async def process_review_order_selection(message: Message, state: FSMContext):
         logger.error(f"Ошибка при выборе заказа для отзыва: {e}")
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
         await state.clear()
-
 
 @router.message(OrderStates.input_rating)
 async def process_review_rating(message: Message, state: FSMContext):
@@ -712,7 +691,6 @@ async def process_review_rating(message: Message, state: FSMContext):
         logger.error(f"Ошибка при вводе рейтинга: {e}")
         await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(await get_user_roles(message.from_user.id)))
         await state.clear()
-
 
 @router.message(OrderStates.input_comment)
 async def process_review_comment(message: Message, state: FSMContext):

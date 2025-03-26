@@ -11,13 +11,9 @@ def get_current_user(
     x_telegram_id: Annotated[str, Header()],
     session: Annotated[Session, Depends(get_session)],
 ) -> User:
-    """Получить текущего пользователя по заголовку x-telegram-id."""
     if not x_telegram_id:
         raise HTTPException(status_code=400, detail="Заголовок x-telegram-id отсутствует")
-    try:
-        telegram_id = int(x_telegram_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="x-telegram-id должен быть целым числом")
+    telegram_id = int(x_telegram_id)  # Безопасно для больших чисел в Python
     user = session.query(User).filter(User.telegram_id == telegram_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")

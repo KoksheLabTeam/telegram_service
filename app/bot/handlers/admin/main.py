@@ -21,9 +21,9 @@ async def admin_panel(message: Message):
          InlineKeyboardButton(text="Удалить заказ", callback_data="delete_order")],
         [InlineKeyboardButton(text="Список городов", callback_data="list_cities"),
          InlineKeyboardButton(text="Добавить город", callback_data="add_city")],
-        [InlineKeyboardButton(text="Изменить город", callback_data="edit_city"),
+        [InlineKeyboardButton(text="Переименовать город", callback_data="rename_city"),  # Оставляем эту кнопку
          InlineKeyboardButton(text="Удалить город", callback_data="delete_city")],
-        [InlineKeyboardButton(text="Список категорий", callback_data="list_categories"),  # Новая кнопка
+        [InlineKeyboardButton(text="Список категорий", callback_data="list_categories"),
          InlineKeyboardButton(text="Добавить категорию", callback_data="add_category")],
         [InlineKeyboardButton(text="Изменить категорию", callback_data="edit_category"),
          InlineKeyboardButton(text="Удалить категорию", callback_data="delete_category")],
