@@ -60,7 +60,7 @@ async def complete_order_start(message: Message, state: FSMContext):
         return
     try:
         orders = await api_request("GET", f"{API_URL}order/", telegram_id)
-        active_orders = [o for o in orders if o["status"] == "В_прогрессе" and o["executor_id"] == telegram_id]
+        active_orders = [o for o in orders if o["status"] == "IN_PROGRESS" and o["executor_id"] == telegram_id]
         if not active_orders:
             await message.answer("У вас нет активных заказов для завершения.", reply_markup=get_main_keyboard(roles))
             return
@@ -78,7 +78,7 @@ async def complete_order_process(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
     try:
         order_id = int(message.text.strip())
-        order_data = {"status": "Выполнен"}
+        order_data = {"status": "COMPLETED"}
         await api_request("PATCH", f"{API_URL}order/{order_id}", telegram_id, data=order_data)
         await message.answer(f"Заказ ID {order_id} завершён!", reply_markup=get_main_keyboard(await get_user_roles(telegram_id)))
         await state.clear()

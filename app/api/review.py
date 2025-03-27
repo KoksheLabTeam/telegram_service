@@ -6,24 +6,22 @@ from app.core.models.user import User
 from app.core.services import review as review_service
 from app.core.schemas.review import ReviewRead, ReviewCreate, ReviewUpdate
 from app.api.depends.user import get_current_user, get_admin_user
-from app.api.offer import send_telegram_message
+from app.api.offers import send_telegram_message  # Исправленный импорт
 import logging
 
 router = APIRouter(prefix="/review", tags=["Review"])
 logger = logging.getLogger(__name__)
 
-
 @router.post("/", response_model=ReviewRead, status_code=status.HTTP_201_CREATED)
 async def create_review(
-        data: ReviewCreate,
-        user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    data: ReviewCreate,
+    user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Создать новый отзыв (доступно только заказчикам)."""
     if not user.is_customer:
         raise HTTPException(status_code=403, detail="Только заказчики могут создавать отзывы")
     review = review_service.create_review(session, data, user.id)
-
     # Уведомление получателю отзыва
     target = session.get(User, data.target_id)
     message = (
@@ -35,7 +33,6 @@ async def create_review(
         await send_telegram_message(target.telegram_id, message)
     except Exception as e:
         logger.error(f"Ошибка отправки уведомления пользователю {target.id}: {e}")
-
     return review
 
 
@@ -101,7 +98,7 @@ async def delete_review(
     review_service.delete_review_by_id(session, id)
 
     # Уведомление получателю об удалении отзыва
-    message = f"Ваш отзыв по заказу ID {review.order_id} был удалён администратором."
+    message = f"Ваш отзыв по зака   зу ID {review.order_id} был удалён администратором."
     try:
         await send_telegram_message(target.telegram_id, message)
     except Exception as e:

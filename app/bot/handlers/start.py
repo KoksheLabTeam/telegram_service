@@ -11,7 +11,6 @@ import logging
 router = Router()
 logger = logging.getLogger(__name__)
 
-# Определяем состояния для редактирования профиля
 class ProfileEditStates(StatesGroup):
     waiting_for_field = State()
     waiting_for_name = State()
@@ -38,7 +37,6 @@ async def start_command(message: Message):
                 logger.error(f"Ошибка с городами: {city_error}")
                 await message.answer(f"Ошибка с городами: {city_error}")
                 return
-
             user_data = {
                 "telegram_id": telegram_id,
                 "name": message.from_user.full_name or "Unnamed",
@@ -68,8 +66,6 @@ async def show_profile(message: Message, state: FSMContext):
         all_categories = await api_request("GET", f"{API_URL}category/", telegram_id)
         category_ids = user.get('category_ids', []) or []
         categories = [cat['name'] for cat in all_categories if cat['id'] in category_ids]
-
-        # Формируем строку роли
         roles = []
         if user['is_admin']:
             roles.append("Администратор")
@@ -78,7 +74,6 @@ async def show_profile(message: Message, state: FSMContext):
         if user['is_executor']:
             roles.append("Исполнитель")
         role_text = ", ".join(roles) if roles else "Не определена"
-
         profile_text = (
             f"Ваш профиль:\n\n"
             f"Telegram ID: {user['telegram_id']}\n"
@@ -90,7 +85,6 @@ async def show_profile(message: Message, state: FSMContext):
             f"Рейтинг: {user['rating']}\n"
             f"Завершенные заказы: {user['completed_orders']}"
         )
-
         edit_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="Изменить имя", callback_data="edit_name"),
@@ -101,15 +95,35 @@ async def show_profile(message: Message, state: FSMContext):
                 InlineKeyboardButton(text="Назад", callback_data="back_to_main")
             ]
         ])
-
         await message.answer(profile_text, reply_markup=edit_keyboard)
     except Exception as e:
         logger.error(f"Ошибка при отображении профиля: {e}")
         roles = await get_user_roles(telegram_id)
-        await message.answer(
-            f"Ошибка при загрузке профиля: {e}",
-            reply_markup=get_main_keyboard(roles)
-        )
+        await message.answer(f"Ошибка при загрузке профиля: {e}", reply_markup=get_main_keyboard(roles))
+
+@router.message(F.text == "Список заказов")
+async def list_orders(message: Message):
+    telegram_id = message.from_user.id
+    roles = await get_user_roles(telegram_id)
+    try:
+        orders = await api_request("GET", f"{API_URL}order/", telegram_id)
+        if not orders:
+            await message.answer("У вас нет заказов.", reply_markup=get_main_keyboard(roles))
+            return
+        response = "Ваши заказы:\n\n"
+        status_map = {
+            "PENDING": "Ожидает",
+            "IN_PROGRESS": "В процессе",
+            "COMPLETED": "Завершён",
+            "CANCELED": "Отменён"
+        }
+        for order in orders:
+            status = status_map.get(order["status"], order["status"])
+            response += f"ID: {order['id']} - {order['title']} ({status})\n"
+        await message.answer(response, reply_markup=get_main_keyboard(roles))
+    except Exception as e:
+        logger.error(f"Ошибка загрузки заказов: {e}")
+        await message.answer(f"Ошибка: {e}", reply_markup=get_main_keyboard(roles))
 
 @router.callback_query(F.data == "edit_name")
 async def start_edit_name(callback: CallbackQuery, state: FSMContext):
@@ -164,7 +178,7 @@ async def process_name_change(message: Message, state: FSMContext):
             reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
         )
         await state.clear()
-        await show_profile(message, state)  # Показываем обновленный профиль
+        await show_profile(message, state)
     except Exception as e:
         logger.error(f"Ошибка при изменении имени: {e}")
         roles = await get_user_roles(telegram_id)
@@ -178,11 +192,6 @@ async def process_name_change(message: Message, state: FSMContext):
 async def process_city_change(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
     roles = await get_user_roles(telegram_id)
-    # Если пользователь — администратор, проверяем, не в админ-состоянии ли он
-    current_state = await state.get_state()
-    if roles["is_admin"] and current_state != "ProfileEditStates:waiting_for_city":
-        await message.answer("Вы находитесь в режиме админ-панели. Завершите действие там.")
-        return
     try:
         city_id = int(message.text.strip())
         update_data = {"city_id": city_id}
@@ -213,7 +222,7 @@ async def process_category_change(message: Message, state: FSMContext):
             reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
         )
         await state.clear()
-        await show_profile(message, state)  # Показываем обновленный профиль
+        await show_profile(message, state)
     except ValueError:
         await message.answer("Пожалуйста, введите корректные ID категорий через запятую.")
     except Exception as e:

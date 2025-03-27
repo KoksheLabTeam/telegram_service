@@ -5,11 +5,8 @@ from app.bot.config import ADMIN_TELEGRAM_ID, API_URL
 import logging
 
 logger = logging.getLogger(__name__)
-
-# Общий роутер для утилит
 common_router = Router()
 
-# Функция для выполнения API-запросов
 async def api_request(method: str, url: str, telegram_id: int, data: dict = None):
     headers = {"x-telegram-id": str(telegram_id)}
     logger.info(f"Выполняется запрос: {method} {url} с headers={headers}")
@@ -43,7 +40,6 @@ async def api_request(method: str, url: str, telegram_id: int, data: dict = None
             logger.error(f"Ошибка при выполнении запроса {method} {url}: {e}")
             raise
 
-# Функция для выполнения API-запросов без авторизации
 async def api_request_no_auth(method: str, url: str):
     async with aiohttp.ClientSession() as session:
         if method == "GET":
@@ -52,12 +48,8 @@ async def api_request_no_auth(method: str, url: str):
                     raise Exception(f"Ошибка {response.status}: {await response.text()}")
                 return await response.json()
 
-# Получение Telegram ID пользователя
 def get_user_telegram_id(message: Message) -> int:
     return message.from_user.id
-
-# Основная клавиатура
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 def get_main_keyboard(roles: dict = None) -> ReplyKeyboardMarkup:
     roles = roles or {}
@@ -65,14 +57,12 @@ def get_main_keyboard(roles: dict = None) -> ReplyKeyboardMarkup:
         [KeyboardButton(text="Профиль"), KeyboardButton(text="Список заказов")],
         [KeyboardButton(text="Сменить роль")]
     ]
-    # Кнопки для заказчиков
     if roles.get("is_customer"):
         buttons[0].insert(1, KeyboardButton(text="Создать заказ"))
         buttons.append([KeyboardButton(text="Отменить заказ"), KeyboardButton(text="Редактировать заказ")])
         buttons.append([KeyboardButton(text="Удалить заказ")])
         buttons.append([KeyboardButton(text="Посмотреть предложения")])
         buttons.append([KeyboardButton(text="Оставить отзыв")])
-    # Кнопки для исполнителей
     if roles.get("is_executor"):
         buttons.append([KeyboardButton(text="Создать предложение")])
         buttons.append([KeyboardButton(text="Список доступных заказов")])
@@ -80,15 +70,15 @@ def get_main_keyboard(roles: dict = None) -> ReplyKeyboardMarkup:
         buttons.append([KeyboardButton(text="Админ панель")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-# Функция для получения роли пользователя
 async def get_user_roles(telegram_id: int) -> dict:
     try:
         user = await api_request("GET", f"{API_URL}user/by_telegram_id/{telegram_id}", telegram_id)
         return {
+            "id": user["id"],  # Добавляем user_id
             "is_admin": telegram_id == ADMIN_TELEGRAM_ID,
             "is_executor": user["is_executor"],
             "is_customer": user["is_customer"]
         }
     except Exception as e:
         logger.error(f"Ошибка получения ролей пользователя: {e}")
-        return {"is_admin": False, "is_executor": False, "is_customer": False}
+        return {"id": None, "is_admin": False, "is_executor": False, "is_customer": False}
