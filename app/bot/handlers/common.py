@@ -54,10 +54,11 @@ def get_user_telegram_id(message: Message) -> int:
 def get_main_keyboard(roles: dict = None) -> ReplyKeyboardMarkup:
     roles = roles or {}
     buttons = [
-        [KeyboardButton(text="Профиль"), KeyboardButton(text="Список заказов")],
+        [KeyboardButton(text="Профиль")],  # Базовая кнопка для всех
         [KeyboardButton(text="Сменить роль")]
     ]
     if roles.get("is_customer"):
+        buttons[0].append(KeyboardButton(text="Список заказов"))  # Только для заказчиков
         buttons[0].insert(1, KeyboardButton(text="Создать заказ"))
         buttons.append([KeyboardButton(text="Отменить заказ"), KeyboardButton(text="Редактировать заказ")])
         buttons.append([KeyboardButton(text="Удалить заказ")])
@@ -67,6 +68,7 @@ def get_main_keyboard(roles: dict = None) -> ReplyKeyboardMarkup:
         buttons.append([KeyboardButton(text="Создать предложение")])
         buttons.append([KeyboardButton(text="Список доступных заказов")])
     if roles.get("is_admin"):
+        buttons[0].append(KeyboardButton(text="Список заказов"))  # Только для админов
         buttons.append([KeyboardButton(text="Админ панель")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 

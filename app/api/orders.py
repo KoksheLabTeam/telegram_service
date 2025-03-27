@@ -15,6 +15,28 @@ import logging
 router = APIRouter(prefix="/order", tags=["Orders"])
 logger = logging.getLogger(__name__)
 
+# Сначала фиксированный маршрут /available
+@router.get("/available", response_model=List[OrderRead])
+@router.get("/available", response_model=List[OrderRead])
+def get_available_orders(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    logger.info(f"Запрос доступных заказов для пользователя {current_user.id}, is_admin={current_user.is_admin}")
+    if not current_user.is_executor and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Доступ только для исполнителей или админов")
+    orders = order_service.get_available_orders(
+        session,
+        executor_id=current_user.id if not current_user.is_admin else None,
+        is_admin=current_user.is_admin
+    )
+    logger.info(f"Найдено заказов: {len(orders)}")
+    # Явно преобразуем в OrderRead
+    try:
+        return [OrderRead.from_orm(order) for order in orders]
+    except Exception as e:
+        logger.error(f"Ошибка сериализации заказов: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка сериализации: {str(e)}")
 
 @router.post("/", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
 async def create_order(
@@ -197,20 +219,3 @@ async def cancel_order(
             logger.error(f"Ошибка отправки уведомления исполнителю {executor.id}: {e}")
     logger.info(f"Заказ ID {id} отменён")
     return canceled_order
-
-@router.get("/available", response_model=List[OrderRead])
-def get_available_orders(
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)],
-):
-    """Получить список доступных заказов для исполнителей или админов."""
-    logger.info(f"Запрос GET /order/available от пользователя {current_user.id}")
-    if not current_user.is_executor and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Доступ только для исполнителей или админов")
-    orders = order_service.get_available_orders(
-        session,
-        executor_id=current_user.id if not current_user.is_admin else None,
-        is_admin=current_user.is_admin
-    )
-    logger.info(f"Найдено {len(orders)} доступных заказов")
-    return orders

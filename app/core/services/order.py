@@ -35,7 +35,6 @@ def get_orders_by_user(session: Session, user_id: int) -> list[Order]:
 
 class OrderService:
     def get_available_orders(self, session: Session, executor_id: int = None, is_admin: bool = False):
-        """Получение списка доступных заказов для исполнителя."""
         query = session.query(Order).filter(Order.status == "PENDING")
         if executor_id and not is_admin:
             query = (
