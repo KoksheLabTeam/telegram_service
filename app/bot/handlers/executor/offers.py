@@ -1,4 +1,3 @@
-# app/bot/handlers/executor/offers.py
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -10,7 +9,6 @@ import logging
 router = Router()
 logger = logging.getLogger(__name__)
 
-
 class OfferStates(StatesGroup):
     select_order = State()
     price = State()
@@ -20,11 +18,11 @@ class OfferStates(StatesGroup):
     estimated_time_edit = State()
     select_offer_delete = State()
 
-
 @router.message(F.text == "Создать предложение")
 async def start_create_offer(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
     roles = await get_user_roles(telegram_id)
+    logger.info(f"Роли пользователя: {roles}")
     if not roles["is_executor"]:
         await message.answer(
             "Только исполнители могут создавать предложения.",
@@ -34,26 +32,39 @@ async def start_create_offer(message: Message, state: FSMContext):
 
     try:
         user_profile = await api_request("GET", f"{API_URL}user/me", telegram_id)
+        logger.info(f"Профиль пользователя: {user_profile}")
         executor_categories = set(user_profile.get("category_ids", []))
-        executor_city = user_profile.get("city_id")
+        logger.info(f"Категории исполнителя: {executor_categories}")
 
-        if not executor_categories or not executor_city:
+        if not executor_categories:
             await message.answer(
-                "Пожалуйста, обновите профиль, указав категории и город, чтобы видеть доступные заказы.",
+                "Пожалуйста, обновите профиль, указав категории.",
                 reply_markup=get_main_keyboard(roles)
             )
             return
 
         available_orders = await api_request("GET", f"{API_URL}order/available", telegram_id)
+        logger.info(f"Доступные заказы от API: {available_orders}")
+
+        if not available_orders:
+            await message.answer(
+                "Нет доступных заказов от API.",
+                reply_markup=get_main_keyboard(roles)
+            )
+            return
+
+        # Убираем проверку города
         filtered_orders = [
             order for order in available_orders
-            if order.get("category_id") in executor_categories and order.get("customer", {}).get(
-                "city_id") == executor_city
+            if order.get("category_id") in executor_categories
+            and order.get("status") == "PENDING"
+            and (not roles["is_admin"] or order.get("customer_id") != user_profile["id"])
         ]
+        logger.info(f"Отфильтрованные заказы: {filtered_orders}")
 
         if not filtered_orders:
             await message.answer(
-                "Нет доступных заказов в вашем городе и категориях.",
+                "Нет доступных заказов в ваших категориях.",
                 reply_markup=get_main_keyboard(roles)
             )
             return
@@ -63,7 +74,8 @@ async def start_create_offer(message: Message, state: FSMContext):
             f"Название: {order['title']}\n"
             f"Описание: {order.get('description', 'Нет описания')}\n"
             f"Цена: {order['desired_price']} тенге\n"
-            f"Дедлайн: {order['due_date']}"
+            f"Дедлайн: {order['due_date']}\n"
+            f"Статус: {order['status']}"
             for order in filtered_orders
         ])
         await message.answer(
@@ -79,17 +91,17 @@ async def start_create_offer(message: Message, state: FSMContext):
         )
         await state.clear()
 
-
 @router.message(OfferStates.select_order)
 async def process_order_selection(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
     try:
         order_id = int(message.text.strip())
         available_orders = await api_request("GET", f"{API_URL}order/available", telegram_id)
+        logger.info(f"Доступные заказы при выборе: {available_orders}")
         selected_order = next((order for order in available_orders if order["id"] == order_id), None)
-        if not selected_order:
+        if not selected_order or selected_order["status"] != "PENDING":
             await message.answer(
-                "Заказ не найден или недоступен.",
+                "Заказ не найден или недоступен для предложений.",
                 reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
             )
             await state.clear()
@@ -107,7 +119,6 @@ async def process_order_selection(message: Message, state: FSMContext):
             reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
         )
         await state.clear()
-
 
 @router.message(OfferStates.price)
 async def process_price(message: Message, state: FSMContext):
@@ -129,7 +140,6 @@ async def process_price(message: Message, state: FSMContext):
         )
         await state.clear()
 
-
 @router.message(OfferStates.estimated_time)
 async def process_estimated_time(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
@@ -139,12 +149,28 @@ async def process_estimated_time(message: Message, state: FSMContext):
             await message.answer("Время выполнения должно быть больше 0.")
             return
         data = await state.get_data()
+        order_id = data["order_id"]
+        logger.info(f"Создание предложения для заказа ID {order_id}")
+
+        # Проверка заказа перед отправкой
+        order = await api_request("GET", f"{API_URL}order/{order_id}", telegram_id)
+        logger.info(f"Данные заказа {order_id}: {order}")
+        if order.get("status") != "PENDING":
+            await message.answer(
+                "Этот заказ больше не доступен для предложений.",
+                reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
+            )
+            await state.clear()
+            return
+
         offer_data = {
-            "order_id": data["order_id"],
+            "order_id": order_id,
             "price": data["price"],
             "estimated_time": estimated_time
         }
-        offer = await api_request("POST", f"{API_URL}order/{data['order_id']}/offers/", telegram_id, data=offer_data)
+        logger.info(f"Отправка предложения: {offer_data}")
+        offer = await api_request("POST", f"{API_URL}order/{order_id}/offers/", telegram_id, data=offer_data)
+        logger.info(f"Ответ API: {offer}")
         await message.answer(
             f"Предложение для заказа ID {offer['order_id']} успешно создано!\n"
             f"Цена: {offer['price']} тенге\n"
@@ -162,7 +188,6 @@ async def process_estimated_time(message: Message, state: FSMContext):
         )
         await state.clear()
 
-
 @router.message(F.text == "Мои предложения")
 async def list_offers(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
@@ -176,6 +201,7 @@ async def list_offers(message: Message, state: FSMContext):
 
     try:
         orders = await api_request("GET", f"{API_URL}order/", telegram_id)
+        logger.info(f"Все заказы: {orders}")
         offers = []
         for order in orders:
             order_offers = await api_request("GET", f"{API_URL}order/{order['id']}/offers/", telegram_id)
@@ -210,7 +236,6 @@ async def list_offers(message: Message, state: FSMContext):
             f"Ошибка: {e}",
             reply_markup=get_main_keyboard(roles)
         )
-
 
 @router.callback_query(F.data == "edit_offer")
 async def start_edit_offer(callback: CallbackQuery, state: FSMContext):
@@ -251,24 +276,24 @@ async def start_edit_offer(callback: CallbackQuery, state: FSMContext):
         await state.clear()
         await callback.answer()
 
-
 @router.message(OfferStates.select_offer_edit)
 async def process_offer_edit_selection(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
     try:
         offer_id = int(message.text.strip())
-        offer = await api_request("GET", f"{API_URL}order/{(await state.get_data()).get('order_id', 0)}/offers/",
-                                  telegram_id)
+        data = await state.get_data()
+        order_id = data.get("order_id", 0)
+        offer = await api_request("GET", f"{API_URL}order/{order_id}/offers/", telegram_id)
         selected_offer = next((o for o in offer if o["id"] == offer_id), None)
         if not selected_offer or selected_offer["status"] != "PENDING":
             await message.answer(
-                "Это предложение нельзя редактировать, так как оно уже принято или отклонено.",
+                "Это предложение нельзя редактировать.",
                 reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
             )
             await state.clear()
             return
 
-        await state.update_data(offer_id=offer_id)
+        await state.update_data(offer_id=offer_id, order_id=selected_offer["order_id"])
         await message.answer(
             f"Текущая цена: {selected_offer['price']} тенге\nВведите новую цену (в тенге):"
         )
@@ -282,7 +307,6 @@ async def process_offer_edit_selection(message: Message, state: FSMContext):
             reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
         )
         await state.clear()
-
 
 @router.message(OfferStates.price_edit)
 async def process_price_edit(message: Message, state: FSMContext):
@@ -303,7 +327,6 @@ async def process_price_edit(message: Message, state: FSMContext):
             reply_markup=get_main_keyboard(await get_user_roles(message.from_user.id))
         )
         await state.clear()
-
 
 @router.message(OfferStates.estimated_time_edit)
 async def process_estimated_time_edit(message: Message, state: FSMContext):
@@ -340,7 +363,6 @@ async def process_estimated_time_edit(message: Message, state: FSMContext):
             reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
         )
         await state.clear()
-
 
 @router.callback_query(F.data == "delete_offer")
 async def start_delete_offer(callback: CallbackQuery, state: FSMContext):
@@ -384,7 +406,6 @@ async def start_delete_offer(callback: CallbackQuery, state: FSMContext):
         await state.clear()
         await callback.answer()
 
-
 @router.message(OfferStates.select_offer_delete)
 async def process_offer_delete_selection(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
@@ -400,7 +421,7 @@ async def process_offer_delete_selection(message: Message, state: FSMContext):
 
         if not offer or offer["status"] != "PENDING":
             await message.answer(
-                "Это предложение нельзя удалить, так как оно уже принято или отклонено.",
+                "Это предложение нельзя удалить.",
                 reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
             )
             await state.clear()
@@ -422,7 +443,6 @@ async def process_offer_delete_selection(message: Message, state: FSMContext):
         )
         await state.clear()
 
-
 @router.callback_query(F.data == "cancel_delete")
 async def cancel_delete_offer(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
@@ -432,11 +452,11 @@ async def cancel_delete_offer(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.answer()
 
-
 @router.message(F.text == "Список доступных заказов")
 async def list_available_orders(message: Message):
     telegram_id = message.from_user.id
     roles = await get_user_roles(telegram_id)
+    logger.info(f"Роли пользователя: {roles}")
     if not roles["is_executor"]:
         await message.answer(
             "Только исполнители могут просматривать доступные заказы.",
@@ -445,10 +465,9 @@ async def list_available_orders(message: Message):
         return
     try:
         user_profile = await api_request("GET", f"{API_URL}user/me", telegram_id)
+        logger.info(f"Профиль пользователя: {user_profile}")
         executor_categories = set(user_profile.get("category_ids", []))
-        executor_city = user_profile.get("city_id")
-        logger.info(
-            f"Профиль исполнителя: telegram_id={telegram_id}, categories={executor_categories}, city={executor_city}")
+        logger.info(f"Категории исполнителя: {executor_categories}")
 
         if not executor_categories:
             await message.answer(
@@ -458,13 +477,21 @@ async def list_available_orders(message: Message):
             return
 
         available_orders = await api_request("GET", f"{API_URL}order/available", telegram_id)
-        logger.info(f"Все доступные заказы: {available_orders}")
+        logger.info(f"Доступные заказы от API: {available_orders}")
 
+        if not available_orders:
+            await message.answer(
+                "Нет доступных заказов от API.",
+                reply_markup=get_main_keyboard(roles)
+            )
+            return
+
+        # Убираем проверку города
         filtered_orders = [
             order for order in available_orders
             if order.get("category_id") in executor_categories
-               and (not roles["is_admin"] or order.get("customer_id") != user_profile["id"])
-            # Используем customer_id напрямую
+            and order.get("status") == "PENDING"
+            and (not roles["is_admin"] or order.get("customer_id") != user_profile["id"])
         ]
         logger.info(f"Отфильтрованные заказы: {filtered_orders}")
 
@@ -480,7 +507,8 @@ async def list_available_orders(message: Message):
             f"Название: {order['title']}\n"
             f"Описание: {order.get('description', 'Нет описания')}\n"
             f"Цена: {order['desired_price']} тенге\n"
-            f"Дедлайн: {order['due_date']}"
+            f"Дедлайн: {order['due_date']}\n"
+            f"Статус: {order['status']}"
             for order in filtered_orders
         ])
         await message.answer(
@@ -493,68 +521,3 @@ async def list_available_orders(message: Message):
             f"Ошибка: {e}",
             reply_markup=get_main_keyboard(roles)
         )
-
-
-@router.message(F.text == "Создать предложение")
-async def start_create_offer(message: Message, state: FSMContext):
-    telegram_id = message.from_user.id
-    roles = await get_user_roles(telegram_id)
-    if not roles["is_executor"]:
-        await message.answer(
-            "Только исполнители могут создавать предложения.",
-            reply_markup=get_main_keyboard(roles)
-        )
-        return
-
-    try:
-        user_profile = await api_request("GET", f"{API_URL}user/me", telegram_id)
-        executor_categories = set(user_profile.get("category_ids", []))
-        executor_city = user_profile.get("city_id")
-        logger.info(
-            f"Профиль исполнителя: telegram_id={telegram_id}, categories={executor_categories}, city={executor_city}")
-
-        if not executor_categories:
-            await message.answer(
-                "Пожалуйста, обновите профиль, указав категории, чтобы видеть доступные заказы.",
-                reply_markup=get_main_keyboard(roles)
-            )
-            return
-
-        available_orders = await api_request("GET", f"{API_URL}order/available", telegram_id)
-        logger.info(f"Все доступные заказы: {available_orders}")
-
-        filtered_orders = [
-            order for order in available_orders
-            if order.get("category_id") in executor_categories
-               and (not roles["is_admin"] or order.get("customer_id") != user_profile["id"])
-            # Используем customer_id напрямую
-        ]
-        logger.info(f"Отфильтрованные заказы: {filtered_orders}")
-
-        if not filtered_orders:
-            await message.answer(
-                "Нет доступных заказов в ваших категориях.",
-                reply_markup=get_main_keyboard(roles)
-            )
-            return
-
-        orders_list = "\n\n".join([
-            f"ID: {order['id']}\n"
-            f"Название: {order['title']}\n"
-            f"Описание: {order.get('description', 'Нет описания')}\n"
-            f"Цена: {order['desired_price']} тенге\n"
-            f"Дедлайн: {order['due_date']}"
-            for order in filtered_orders
-        ])
-        await message.answer(
-            f"Доступные заказы:\n{orders_list}\n\nВведите ID заказа, на который хотите подать предложение:",
-            reply_markup=get_main_keyboard(roles)
-        )
-        await state.set_state(OfferStates.select_order)
-    except Exception as e:
-        logger.error(f"Ошибка при загрузке доступных заказов: {e}")
-        await message.answer(
-            f"Ошибка: {e}",
-            reply_markup=get_main_keyboard(roles)
-        )
-        await state.clear()
