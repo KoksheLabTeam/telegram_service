@@ -26,37 +26,37 @@ async def send_telegram_message(chat_id: int, text: str):
             if response.status != 200:
                 raise Exception(f"Ошибка Telegram API: {await response.text()}")
 
-@router.post("/", response_model=OfferRead, status_code=status.HTTP_201_CREATED)
+
+@router.post("/{order_id}/offers/", response_model=OfferRead, status_code=status.HTTP_201_CREATED)
 async def create_offer(
-    order_id: int,
-    data: OfferCreate,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)],
+        order_id: int,
+        data: OfferCreate,
+        current_user: Annotated[User, Depends(get_current_user)],
+        session: Annotated[Session, Depends(get_session)],
 ):
-    """Создать новое предложение (доступно только исполнителям или админам)."""
-    logger.info(f"Создание предложения для заказа {order_id} пользователем {current_user.id} (admin: {current_user.is_admin})")
-    if not current_user.is_executor and not current_user.is_admin:
-        logger.warning(f"Попытка создания предложения не исполнителем: {current_user.id}")
-        raise HTTPException(status_code=403, detail="Только исполнители или администраторы могут создавать предложения")
+    logger.info(f"Создание предложения для заказа {order_id} пользователем {current_user.id}")
+    if not current_user.is_executor:
+        raise HTTPException(status_code=403, detail="Только исполнители могут создавать предложения")
+
     order = order_service.get_order_by_id(session, order_id)
     if not order or order.status != "PENDING":
-        raise HTTPException(status_code=400, detail="Заказ не найден или не в статусе 'PENDING'")
-    if not current_user.is_admin and order.customer_id == current_user.id:
-        logger.warning(f"Попытка создания предложения для собственного заказа: {current_user.id}")
-        raise HTTPException(status_code=403, detail="Нельзя создавать предложение для собственного заказа")
-    offer = offer_service.create_offer(session, data, current_user.id, order_id)
+        raise HTTPException(status_code=404, detail="Заказ не найден или недоступен для предложений")
+
+    offer = offer_service.create_offer(session, data, current_user.id)
+    logger.info(f"Предложение создано: ID {offer.id}")
+
     customer = session.get(User, order.customer_id)
     message = (
-        f"Новое предложение по вашему заказу '{order.title}' (ID: {order.id}):\n"
-        f"Исполнитель: {current_user.name}\n"
+        f"Новое предложение для заказа '{order.title}' (ID: {order_id}):\n"
+        f"Исполнитель: {current_user.first_name or 'Без имени'}\n"
         f"Цена: {offer.price} тенге\n"
-        f"Время выполнения: {offer.estimated_time} часов"
+        f"Дата завершения: {offer.due_date.strftime('%Y-%m-%d %H:%M')}"
     )
     try:
         await send_telegram_message(customer.telegram_id, message)
     except Exception as e:
         logger.error(f"Ошибка отправки уведомления заказчику {customer.id}: {e}")
-    logger.info(f"Предложение создано: ID {offer.id}")
+
     return offer
 
 @router.get("/", response_model=List[OfferRead])

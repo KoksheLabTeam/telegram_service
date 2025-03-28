@@ -8,15 +8,13 @@ from app.core.models.order import Order
 from app.core.schemas.order import OrderCreate, OrderRead, OrderUpdate
 from app.core.services import order as order_service
 from app.api.depends.user import get_current_user
-from app.api.offers import send_telegram_message  # Используем функцию из offer.py
+from app.api.offers import send_telegram_message
 from datetime import datetime, timedelta
 import logging
 
 router = APIRouter(prefix="/order", tags=["Orders"])
 logger = logging.getLogger(__name__)
 
-# Сначала фиксированный маршрут /available
-@router.get("/available", response_model=List[OrderRead])
 @router.get("/available", response_model=List[OrderRead])
 def get_available_orders(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -31,7 +29,6 @@ def get_available_orders(
         is_admin=current_user.is_admin
     )
     logger.info(f"Найдено заказов: {len(orders)}")
-    # Явно преобразуем в OrderRead
     try:
         return [OrderRead.from_orm(order) for order in orders]
     except Exception as e:
@@ -59,6 +56,7 @@ async def create_order(
     ).all()
     message = (
         f"Новый заказ '{order.title}' (ID: {order.id}):\n"
+        f"Описание: {order.description or 'Нет описания'}\n"  # Добавляем описание
         f"Категория: {order.category.name}\n"
         f"Желаемая цена: {order.desired_price} тенге\n"
         f"Срок: {order.due_date.strftime('%Y-%m-%d %H:%M')}"
@@ -69,7 +67,6 @@ async def create_order(
         except Exception as e:
             logger.error(f"Ошибка отправки уведомления исполнителю {executor.id}: {e}")
     return order
-
 
 @router.get("/", response_model=List[OrderRead])
 def get_orders(
@@ -89,7 +86,6 @@ def get_orders(
         logger.error(f"Ошибка в get_orders: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Внутренняя ошибка сервера: {str(e)}")
 
-
 @router.get("/{id}", response_model=OrderRead)
 def get_order(
         id: int,
@@ -105,7 +101,6 @@ def get_order(
         logger.warning(f"Попытка доступа к заказу ID {id} без прав: {current_user.id}")
         raise HTTPException(status_code=403, detail="Нет прав для просмотра этого заказа")
     return order
-
 
 @router.patch("/{id}", response_model=OrderRead)
 async def update_order(
@@ -124,10 +119,8 @@ async def update_order(
         raise HTTPException(status_code=403, detail="Нет прав для обновления этого заказа")
 
     if current_user.is_admin:
-        # Админ может обновить заказ без ограничений
         updated_order = order_service.update_order_by_id(session, data, id)
-    elif data.status == "Выполнен" and order.executor_id == current_user.id:
-        # Завершение заказа исполнителем
+    elif data.status == "COMPLETED" and order.executor_id == current_user.id:
         if order.status != "IN_PROGRESS":
             raise HTTPException(status_code=400, detail="Заказ можно завершить только из статуса 'IN_PROGRESS'")
         updated_order = order_service.update_order_by_id(session, data, id)
@@ -141,12 +134,11 @@ async def update_order(
         except Exception as e:
             logger.error(f"Ошибка отправки уведомления заказчику {customer.id}: {e}")
     elif order.customer_id == current_user.id:
-        # Заказчик может менять только определённые статусы
-        if data.status and data.status not in ["PENDING", "CANCELLED"]:
+        if data.status and data.status not in ["PENDING", "CANCELED"]:
             raise HTTPException(status_code=403,
-                                detail="Заказчик может менять статус только на 'PENDING' или 'CANCELLED'")
+                                detail="Заказчик может менять статус только на 'PENDING' или 'CANCELED'")
         updated_order = order_service.update_order_by_id(session, data, id)
-        if data.status == "CANCELLED" and order.executor_id:
+        if data.status == "CANCELED" and order.executor_id:
             executor = session.get(User, order.executor_id)
             message = f"Заказ '{order.title}' (ID: {id}) был отменён заказчиком."
             try:
@@ -158,7 +150,6 @@ async def update_order(
 
     logger.info(f"Заказ ID {id} обновлён")
     return updated_order
-
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_order(
@@ -191,7 +182,6 @@ async def delete_order(
         logger.warning(f"Попытка удаления заказа ID {id} без прав: {current_user.id}")
         raise HTTPException(status_code=403, detail="Нет прав для удаления этого заказа")
 
-
 @router.post("/{id}/cancel", response_model=OrderRead)
 async def cancel_order(
         id: int,
@@ -209,7 +199,7 @@ async def cancel_order(
     if not current_user.is_admin and datetime.utcnow() > order.created_at + timedelta(minutes=30):
         logger.warning(f"Попытка отмены заказа ID {id} после 30 минут: {current_user.id}")
         raise HTTPException(status_code=400, detail="Заказ можно отменить только в течение 30 минут после создания")
-    canceled_order = order_service.update_order_by_id(session, OrderUpdate(status="CANCELLED"), id)
+    canceled_order = order_service.update_order_by_id(session, OrderUpdate(status="CANCELED"), id)
     if order.executor_id:
         executor = session.get(User, order.executor_id)
         message = f"Заказ '{order.title}' (ID: {id}) был отменён."

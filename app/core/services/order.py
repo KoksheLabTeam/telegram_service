@@ -33,18 +33,16 @@ def get_orders_by_user(session: Session, user_id: int) -> list[Order]:
     stmt = select(Order).where((Order.customer_id == user_id) | (Order.executor_id == user_id))
     return session.scalars(stmt).all()
 
-class OrderService:
-    def get_available_orders(self, session: Session, executor_id: int = None, is_admin: bool = False):
-        query = session.query(Order).filter(Order.status == "PENDING")
-        if executor_id and not is_admin:
-            query = (
-                query
-                .join(User, Order.customer_id == User.id)
-                .filter(Order.customer_id != executor_id)
-            )
-        return query.all()
-
-order_service = OrderService()
+def get_available_orders(session: Session, executor_id: int = None, is_admin: bool = False) -> list[Order]:
+    """Получить список доступных заказов."""
+    query = session.query(Order).filter(Order.status == "PENDING")
+    if executor_id and not is_admin:
+        query = (
+            query
+            .join(User, Order.customer_id == User.id)
+            .filter(Order.customer_id != executor_id)
+        )
+    return query.all()
 
 def update_order_by_id(session: Session, data: OrderUpdate, id: int) -> Order:
     """Обновить данные заказа по ID."""
