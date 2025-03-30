@@ -1,7 +1,7 @@
-# app/api/endpoints/orders.py
+# app/api/orders.py
 from typing import Annotated, List
 from fastapi import APIRouter, Depends, status, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload  # Добавлен импорт joinedload
 from app.core.database.helper import get_session
 from app.core.models.user import User
 from app.core.models.order import Order
@@ -28,7 +28,7 @@ def get_available_orders(
         executor_id=current_user.id if not current_user.is_admin else None,
         is_admin=current_user.is_admin
     )
-    logger.info(f"Найдено заказов: {len(orders)}")
+    logger.info(f"Найдено доступных заказов: {len(orders)}")
     try:
         return [OrderRead.from_orm(order) for order in orders]
     except Exception as e:
@@ -37,9 +37,9 @@ def get_available_orders(
 
 @router.post("/", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
 async def create_order(
-        data: OrderCreate,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    data: OrderCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Создать новый заказ (доступно только заказчикам или админам)."""
     logger.info(f"Создание заказа пользователем {current_user.id} (admin: {current_user.is_admin})")
@@ -56,7 +56,7 @@ async def create_order(
     ).all()
     message = (
         f"Новый заказ '{order.title}' (ID: {order.id}):\n"
-        f"Описание: {order.description or 'Нет описания'}\n"  # Добавляем описание
+        f"Описание: {order.description or 'Нет описания'}\n"
         f"Категория: {order.category.name}\n"
         f"Желаемая цена: {order.desired_price} тенге\n"
         f"Срок: {order.due_date.strftime('%Y-%m-%d %H:%M')}"
@@ -70,27 +70,34 @@ async def create_order(
 
 @router.get("/", response_model=List[OrderRead])
 def get_orders(
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
-    """Получить список заказов текущего пользователя (все заказы для админа)."""
+    """Получить список заказов текущего пользователя с предложениями (все заказы для админа)."""
     logger.info(f"Получение заказов для пользователя {current_user.id} (admin: {current_user.is_admin})")
     try:
         if current_user.is_admin:
-            orders = session.query(Order).all()
+            # Админ видит все заказы
+            orders = session.query(Order).options(joinedload(Order.offers)).all()
         else:
-            orders = order_service.get_orders_by_user(session, current_user.id)
+            # Заказчик видит свои заказы с предложениями
+            orders = session.query(Order).options(joinedload(Order.offers)).filter(
+                Order.customer_id == current_user.id,
+                Order.status == "PENDING"
+            ).all()
+            if not orders:
+                logger.info(f"Нет заказов в статусе PENDING для пользователя {current_user.id}")
         logger.info(f"Найдено {len(orders)} заказов для пользователя {current_user.id}")
-        return orders
+        return [OrderRead.from_orm(order) for order in orders]
     except Exception as e:
         logger.error(f"Ошибка в get_orders: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Внутренняя ошибка сервера: {str(e)}")
 
 @router.get("/{id}", response_model=OrderRead)
 def get_order(
-        id: int,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Получить заказ по ID (доступно заказчику, исполнителю или админу)."""
     logger.info(f"Запрос заказа ID {id} от пользователя {current_user.id} (admin: {current_user.is_admin})")
@@ -104,10 +111,10 @@ def get_order(
 
 @router.patch("/{id}", response_model=OrderRead)
 async def update_order(
-        id: int,
-        data: OrderUpdate,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    id: int,
+    data: OrderUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Обновить заказ (доступно заказчику, исполнителю для завершения или админу)."""
     logger.info(f"Обновление заказа ID {id} пользователем {current_user.id} (admin: {current_user.is_admin})")
@@ -153,9 +160,9 @@ async def update_order(
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_order(
-        id: int,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Удалить заказ (доступно заказчику в статусе 'PENDING' или админу)."""
     logger.info(f"Удаление заказа ID {id} пользователем {current_user.id} (admin: {current_user.is_admin})")
@@ -184,9 +191,9 @@ async def delete_order(
 
 @router.post("/{id}/cancel", response_model=OrderRead)
 async def cancel_order(
-        id: int,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     """Отменить заказ (доступно заказчику в течение 30 минут после создания или админу)."""
     logger.info(f"Отмена заказа ID {id} пользователем {current_user.id} (admin: {current_user.is_admin})")

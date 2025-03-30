@@ -1,3 +1,4 @@
+# app/core/services/order.py
 from fastapi.exceptions import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -22,20 +23,22 @@ def create_order(session: Session, data: OrderCreate, customer_id: int) -> Order
     return order
 
 def get_order_by_id(session: Session, id: int) -> Order:
-    """Получить заказ по ID."""
-    order = session.get(Order, id)
+    """Получить заказ по ID с предложениями."""
+    order = session.query(Order).options(joinedload(Order.offers)).get(id)
     if not order:
         raise HTTPException(status_code=404, detail="Заказ не найден")
     return order
 
 def get_orders_by_user(session: Session, user_id: int) -> list[Order]:
-    """Получить список заказов пользователя."""
-    stmt = select(Order).where((Order.customer_id == user_id) | (Order.executor_id == user_id))
+    """Получить список заказов пользователя с предложениями."""
+    stmt = select(Order).options(joinedload(Order.offers)).where(
+        (Order.customer_id == user_id) | (Order.executor_id == user_id)
+    )
     return session.scalars(stmt).all()
 
 def get_available_orders(session: Session, executor_id: int = None, is_admin: bool = False) -> list[Order]:
     """Получить список доступных заказов."""
-    query = session.query(Order).filter(Order.status == "PENDING")
+    query = session.query(Order).options(joinedload(Order.offers)).filter(Order.status == "PENDING")
     if executor_id and not is_admin:
         query = (
             query

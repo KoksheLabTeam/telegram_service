@@ -1,4 +1,4 @@
-# app/api/endpoints/offers.py
+# app/api/offers.py
 from typing import Annotated, List
 from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
@@ -26,13 +26,12 @@ async def send_telegram_message(chat_id: int, text: str):
             if response.status != 200:
                 raise Exception(f"Ошибка Telegram API: {await response.text()}")
 
-
-@router.post("/{order_id}/offers/", response_model=OfferRead, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=OfferRead, status_code=status.HTTP_201_CREATED)
 async def create_offer(
-        order_id: int,
-        data: OfferCreate,
-        current_user: Annotated[User, Depends(get_current_user)],
-        session: Annotated[Session, Depends(get_session)],
+    order_id: int,
+    data: OfferCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     logger.info(f"Создание предложения для заказа {order_id} пользователем {current_user.id}")
     if not current_user.is_executor:
@@ -48,9 +47,9 @@ async def create_offer(
     customer = session.get(User, order.customer_id)
     message = (
         f"Новое предложение для заказа '{order.title}' (ID: {order_id}):\n"
-        f"Исполнитель: {current_user.first_name or 'Без имени'}\n"
+        f"Исполнитель: {current_user.name or 'Без имени'}\n"
         f"Цена: {offer.price} тенге\n"
-        f"Дата завершения: {offer.due_date.strftime('%Y-%m-%d %H:%M')}"
+        f"Дата завершения: {order.due_date.strftime('%Y-%m-%d %H:%M')}"  # Заменяем offer.due_date на order.due_date
     )
     try:
         await send_telegram_message(customer.telegram_id, message)

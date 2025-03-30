@@ -152,17 +152,6 @@ async def process_estimated_time(message: Message, state: FSMContext):
         order_id = data["order_id"]
         logger.info(f"Создание предложения для заказа ID {order_id}")
 
-        # Проверка заказа перед отправкой
-        order = await api_request("GET", f"{API_URL}order/{order_id}", telegram_id)
-        logger.info(f"Данные заказа {order_id}: {order}")
-        if order.get("status") != "PENDING":
-            await message.answer(
-                "Этот заказ больше не доступен для предложений.",
-                reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
-            )
-            await state.clear()
-            return
-
         offer_data = {
             "order_id": order_id,
             "price": data["price"],

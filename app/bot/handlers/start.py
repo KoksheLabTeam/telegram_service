@@ -4,8 +4,8 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKe
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from app.bot.config import ADMIN_TELEGRAM_ID, API_URL
-from app.bot.handlers.common import api_request, api_request_no_auth, get_main_keyboard, get_user_roles
-import aiohttp
+from app.bot.utils import api_request  # Импортируем из нового utils.py
+from app.bot.handlers.common import get_main_keyboard, get_user_roles
 import logging
 
 router = Router()
@@ -17,53 +17,60 @@ class ProfileEditStates(StatesGroup):
     waiting_for_city = State()
     waiting_for_category = State()
 
+async def get_or_create_user(telegram_id: int, full_name: str, username: str | None) -> dict:
+    """Получить пользователя по telegram_id или создать нового, если его нет."""
+    try:
+        # Проверяем наличие пользователя
+        user = await api_request("GET", f"{API_URL}user/by_telegram_id/{telegram_id}", telegram_id=telegram_id)
+        return user
+    except Exception as e:
+        if "404" not in str(e):  # Если ошибка не 404, пробрасываем её дальше
+            raise
+        logger.info(f"Пользователь с telegram_id={telegram_id} не найден, создаём нового")
+
+        # Получаем первый доступный город
+        cities = await api_request("GET", f"{API_URL}city/", telegram_id=telegram_id, auth=False)
+        if not cities:
+            raise Exception("В системе нет городов. Обратитесь к администратору.")
+        city_id = cities[0]["id"]
+
+        # Данные для создания пользователя
+        user_data = {
+            "telegram_id": telegram_id,
+            "name": full_name or "Unnamed",
+            "username": username,
+            "is_customer": True,
+            "is_executor": False,
+            "city_id": city_id
+        }
+
+        # Создаём пользователя
+        user = await api_request("POST", f"{API_URL}user/", telegram_id=telegram_id, data=user_data)
+        logger.info(f"Пользователь с telegram_id={telegram_id} успешно создан")
+        return user
+
 @router.message(Command("start"))
 async def start_command(message: Message):
     logger.info(f"Команда /start от пользователя {message.from_user.id}")
     telegram_id = message.from_user.id
+    full_name = message.from_user.full_name
+    username = message.from_user.username
+
     try:
-        user = await api_request("GET", f"{API_URL}user/by_telegram_id/{telegram_id}", telegram_id)
+        user = await get_or_create_user(telegram_id, full_name, username)
         roles = await get_user_roles(telegram_id)
+        await message.answer("Добро пожаловать! Выберите действие в меню ниже:", reply_markup=get_main_keyboard(roles))
     except Exception as e:
-        logger.error(f"Ошибка при проверке профиля: {e}")
-        if "404" in str(e):
-            try:
-                cities = await api_request_no_auth("GET", f"{API_URL}city/")
-                if not cities:
-                    await message.answer("В системе нет городов. Обратитесь к администратору.")
-                    return
-                city_id = cities[0]["id"]
-            except Exception as city_error:
-                logger.error(f"Ошибка с городами: {city_error}")
-                await message.answer(f"Ошибка с городами: {city_error}")
-                return
-            user_data = {
-                "telegram_id": telegram_id,
-                "name": message.from_user.full_name or "Unnamed",
-                "username": message.from_user.username,
-                "is_customer": True,
-                "is_executor": False,
-                "city_id": city_id
-            }
-            try:
-                await api_request("POST", f"{API_URL}user/", telegram_id, data=user_data)
-                roles = await get_user_roles(telegram_id)
-            except Exception as create_error:
-                logger.error(f"Ошибка создания профиля: {create_error}")
-                await message.answer(f"Ошибка создания профиля: {create_error}")
-                return
-        else:
-            await message.answer(f"Ошибка при проверке профиля: {e}")
-            return
-    await message.answer("Добро пожаловать! Выберите действие в меню ниже:", reply_markup=get_main_keyboard(roles))
+        logger.error(f"Ошибка при обработке команды /start: {e}")
+        await message.answer(f"Ошибка: {e}")
 
 @router.message(F.text == "Профиль")
 async def show_profile(message: Message, state: FSMContext):
     telegram_id = message.from_user.id
     try:
-        user = await api_request("GET", f"{API_URL}user/by_telegram_id/{telegram_id}", telegram_id)
-        city = await api_request("GET", f"{API_URL}city/{user['city_id']}", telegram_id)
-        all_categories = await api_request("GET", f"{API_URL}category/", telegram_id)
+        user = await api_request("GET", f"{API_URL}user/by_telegram_id/{telegram_id}", telegram_id=telegram_id)
+        city = await api_request("GET", f"{API_URL}city/{user['city_id']}", telegram_id=telegram_id)
+        all_categories = await api_request("GET", f"{API_URL}category/", telegram_id=telegram_id)
         category_ids = user.get('category_ids', []) or []
         categories = [cat['name'] for cat in all_categories if cat['id'] in category_ids]
         roles = []
@@ -106,7 +113,7 @@ async def list_orders(message: Message):
     telegram_id = message.from_user.id
     roles = await get_user_roles(telegram_id)
     try:
-        orders = await api_request("GET", f"{API_URL}order/", telegram_id)
+        orders = await api_request("GET", f"{API_URL}order/", telegram_id=telegram_id)
         if not orders:
             await message.answer("У вас нет заказов.", reply_markup=get_main_keyboard(roles))
             return
@@ -135,7 +142,7 @@ async def start_edit_name(callback: CallbackQuery, state: FSMContext):
 async def start_edit_city(callback: CallbackQuery, state: FSMContext):
     telegram_id = callback.from_user.id
     try:
-        cities = await api_request("GET", f"{API_URL}city/", telegram_id)
+        cities = await api_request("GET", f"{API_URL}city/", telegram_id=telegram_id)
         if not cities:
             await callback.message.answer("В системе нет городов. Обратитесь к администратору.")
             return
@@ -151,7 +158,7 @@ async def start_edit_city(callback: CallbackQuery, state: FSMContext):
 async def start_edit_categories(callback: CallbackQuery, state: FSMContext):
     telegram_id = callback.from_user.id
     try:
-        categories = await api_request("GET", f"{API_URL}category/", telegram_id)
+        categories = await api_request("GET", f"{API_URL}category/", telegram_id=telegram_id)
         if not categories:
             await callback.message.answer("В системе нет категорий. Обратитесь к администратору.")
             return
@@ -172,7 +179,7 @@ async def process_name_change(message: Message, state: FSMContext):
     new_name = message.text.strip()
     try:
         update_data = {"name": new_name}
-        await api_request("PATCH", f"{API_URL}user/me", telegram_id, data=update_data)
+        await api_request("PATCH", f"{API_URL}user/me", telegram_id=telegram_id, data=update_data)
         await message.answer(
             f"Имя успешно изменено на '{new_name}'. Выберите действие в меню ниже:",
             reply_markup=get_main_keyboard(await get_user_roles(telegram_id))
@@ -196,7 +203,7 @@ async def process_city_change(message: Message, state: FSMContext):
         city_id = int(message.text.strip())
         update_data = {"city_id": city_id}
         logger.info(f"Профиль: PATCH-запрос на {API_URL}user/me с данными: {update_data}")
-        await api_request("PATCH", f"{API_URL}user/me", telegram_id, data=update_data)
+        await api_request("PATCH", f"{API_URL}user/me", telegram_id=telegram_id, data=update_data)
         await message.answer(
             "Город успешно изменён в вашем профиле.",
             reply_markup=get_main_keyboard(roles)
@@ -216,7 +223,7 @@ async def process_category_change(message: Message, state: FSMContext):
     try:
         category_ids = [int(cat_id.strip()) for cat_id in message.text.split(",")]
         update_data = {"category_ids": category_ids}
-        await api_request("PATCH", f"{API_URL}user/me", telegram_id, data=update_data)
+        await api_request("PATCH", f"{API_URL}user/me", telegram_id=telegram_id, data=update_data)
         await message.answer(
             "Категории успешно изменены. Выберите действие в меню ниже:",
             reply_markup=get_main_keyboard(await get_user_roles(telegram_id))

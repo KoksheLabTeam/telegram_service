@@ -22,7 +22,7 @@ class OfferCreate(BaseSchema):
     order_id: int
     price: float
     estimated_time: int
-    start_date: Optional[datetime]  # Добавлено
+    start_date: Optional[datetime] = None  # Устанавливаем значение по умолчанию None
 
     model_config = {"str_strip_whitespace": True}
 

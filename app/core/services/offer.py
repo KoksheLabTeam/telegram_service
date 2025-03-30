@@ -5,13 +5,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.models.offer import Offer
 from app.core.models.order import Order
 from app.core.schemas.offer import OfferCreate, OfferUpdate
+from app.core.models.user import User  # Добавляем импорт модели User
 
 def create_offer(session: Session, data: OfferCreate, executor_id: int) -> Offer:
     """Создать новое предложение."""
     order = session.get(Order, data.order_id)
     if not order:
         raise HTTPException(status_code=400, detail="Заказ не найден")
-    executor = session.get(User, executor_id)
+    executor = session.get(User, executor_id)  # Теперь User определён
     if order.customer_id == executor_id and not executor.is_admin:
         raise HTTPException(status_code=400, detail="Самопредложение запрещено для не-администраторов")
     offer_data = data.model_dump()

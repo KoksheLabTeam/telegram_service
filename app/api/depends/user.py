@@ -4,8 +4,7 @@ from fastapi.exceptions import HTTPException
 from fastapi import Depends, Header, status
 from app.core.models.user import User
 from app.core.database.helper import get_session
-
-ADMIN_TELEGRAM_ID = 704342630  # Telegram ID администратора
+from app.bot.config import ADMIN_TELEGRAM_ID
 
 def get_current_user(
     x_telegram_id: Annotated[str, Header()],
